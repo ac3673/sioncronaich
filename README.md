@@ -1,10 +1,10 @@
-# sioncronaich
 
-<img src="img/sioncronaich.png" alt="sioncronaich" width="200">
+<p align="center">
+  <img width="350" height="150" src="img/sioncronaich.jpeg" alt='sioncronaich'>
+</p>
 
-> *Sioncronaich* (Scots Gaelic) — to synchronise, to chronicle.
+<p align="center"><strong>sioncronaich</strong> <em>- A lightweight cron-job monitoring tool written in Python - from Gaelic "to synchronise, to chronicle"</em></p>
 
-A lightweight cron-job monitoring tool written in Python 3.12.
 
 `sioncronaich` wraps any shell command, captures its **stdout**, **stderr** and **exit code**,
 then POSTs the result to the sioncronaich web app, which stores everything in a local SQLite
