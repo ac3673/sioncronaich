@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from collections.abc import Generator
-
 from fastapi.testclient import TestClient
 
 from sioncronaich.app import create_app
@@ -15,7 +14,7 @@ from sioncronaich.db import init_db
 from sioncronaich.models import JobResultCreate
 
 
-@pytest.fixture()
+@pytest.fixture
 def db_path(tmp_path: Path) -> Path:
     """Initialised temporary SQLite database."""
     path = tmp_path / "test.db"
@@ -23,7 +22,7 @@ def db_path(tmp_path: Path) -> Path:
     return path
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_job() -> JobResultCreate:
     """A minimal valid JobResultCreate instance."""
     started = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
@@ -40,7 +39,7 @@ def sample_job() -> JobResultCreate:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def failed_job() -> JobResultCreate:
     """A JobResultCreate instance representing a failed job."""
     started = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
@@ -57,7 +56,7 @@ def failed_job() -> JobResultCreate:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     """TestClient wired to a temporary database.
 

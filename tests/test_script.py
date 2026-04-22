@@ -1,4 +1,4 @@
-﻿"""Tests for the sioncronaich CLI script."""
+"""Tests for the sioncronaich CLI script."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from sioncronaich.models import JobResultCreate
 from sioncronaich.script import _post_result, _run_command, main
 
 
-@pytest.fixture()
+@pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_payload() -> JobResultCreate:
     started = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     finished = datetime(2024, 1, 1, 12, 0, 5, tzinfo=UTC)

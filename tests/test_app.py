@@ -5,8 +5,6 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from sioncronaich.db import get_jobs
-from sioncronaich.models import JobResultCreate
-
 
 JOB_PAYLOAD = {
     "job_name": "test-job",

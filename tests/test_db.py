@@ -1,7 +1,5 @@
 """Tests for the SQLite persistence layer."""
 
-import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest

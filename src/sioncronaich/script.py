@@ -28,7 +28,7 @@ def _run_command(command: tuple[str, ...]) -> tuple[str, str, int, datetime, dat
     started_at = _now()
     # shlex.join() produces POSIX quoting for sh; Windows cmd.exe needs plain joining
     shell_cmd = " ".join(command) if sys.platform == "win32" else shlex.join(command)
-    result = subprocess.run(  # noqa: S602 S604
+    result = subprocess.run(
         shell_cmd,
         shell=True,
         capture_output=True,
