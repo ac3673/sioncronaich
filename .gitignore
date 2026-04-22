@@ -12,3 +12,4 @@ wheels/
 # Generated reports and logs
 reports/
 *.log
+.coverage

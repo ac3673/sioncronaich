@@ -36,7 +36,7 @@ def _connect(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
     try:
         yield conn
         conn.commit()
-    except Exception:
+    except Exception:  # pragma: no cover
         conn.rollback()
         raise
     finally:

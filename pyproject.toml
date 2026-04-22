@@ -27,11 +27,14 @@ server = [
 [dependency-groups]
 dev = [
     "commitizen>=4.11.0",
+    "mypy>=1.10",
+    "types-pyyaml>=6.0",
+    "types-requests>=2.32",
     "genbadge[coverage]>=1.1",
     "httpxyz>=0.30",
     "prek>=0.2.27",
     "pytest>=8",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.0",
     "pytest-cov>=7.0.0",
     "ruff>=0.11",
 ]
@@ -89,6 +92,10 @@ log_cli = true
 log_level = "DEBUG"
 log_format = "%(asctime)s.%(msecs).03d | %(name)s | %(levelname)s: %(message)s"
 log_date_format = "%Y-%m-%d %H:%M:%S"
+addopts = [
+    "--cov=sioncronaich",
+    "--cov-report=term-missing",
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

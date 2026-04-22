@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from collections.abc import Generator
+
 from fastapi.testclient import TestClient
 
 from sioncronaich.app import create_app
@@ -56,7 +58,13 @@ def failed_job() -> JobResultCreate:
 
 
 @pytest.fixture()
-def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """TestClient wired to a temporary database."""
+def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+    """TestClient wired to a temporary database.
+
+    Using the context-manager form ensures the FastAPI lifespan
+    (configure_logging + init_db) is exercised on every test that
+    uses this fixture.
+    """
     monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
-    return TestClient(create_app())
+    with TestClient(create_app()) as test_client:
+        yield test_client

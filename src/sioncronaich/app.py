@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
     return app
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     import argparse
 
     import uvicorn
