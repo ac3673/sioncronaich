@@ -106,6 +106,54 @@ class TestPostResult:
 
 
 class TestMain:
+    def test_endpoint_defaults_to_localhost(self, runner: CliRunner):
+        posted_to = []
+
+        def fake_post(endpoint, _payload, _timeout):
+            posted_to.append(endpoint)
+
+        with patch("sioncronaich.script._post_result", side_effect=fake_post):
+            runner.invoke(main, ["--name", "test", "--", sys.executable, "-c", "pass"])
+        assert posted_to[0] == "http://127.0.0.1:8716/jobs"
+
+    def test_endpoint_reads_from_env_var(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("SIONCRONAICH_ENDPOINT", "http://mon.example.com/jobs")
+        posted_to = []
+
+        def fake_post(endpoint, _payload, _timeout):
+            posted_to.append(endpoint)
+
+        with patch("sioncronaich.script._post_result", side_effect=fake_post):
+            runner.invoke(main, ["--name", "test", "--", sys.executable, "-c", "pass"])
+        assert posted_to[0] == "http://mon.example.com/jobs"
+
+    def test_cli_flag_overrides_env_var(
+        self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("SIONCRONAICH_ENDPOINT", "http://mon.example.com/jobs")
+        posted_to = []
+
+        def fake_post(endpoint, _payload, _timeout):
+            posted_to.append(endpoint)
+
+        with patch("sioncronaich.script._post_result", side_effect=fake_post):
+            runner.invoke(
+                main,
+                [
+                    "--name",
+                    "test",
+                    "--endpoint",
+                    "http://override.example.com/jobs",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "pass",
+                ],
+            )
+        assert posted_to[0] == "http://override.example.com/jobs"
+
     def test_exits_with_zero_on_success(self, runner: CliRunner):
         with patch("sioncronaich.script._post_result"):
             result = runner.invoke(main, ["--name", "test", "--", sys.executable, "-c", "pass"])

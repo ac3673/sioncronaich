@@ -16,6 +16,16 @@ def db_path() -> Path | None:
     return Path(raw) if raw else None
 
 
+def root_path() -> str:
+    """Return the ASGI root path from ``SIONCRONAICH_ROOT_PATH``.
+
+    Set this to the prefix your reverse proxy strips before forwarding,
+    e.g. ``SIONCRONAICH_ROOT_PATH=/sioncronaich`` when Caddy is configured
+    with ``handle_path /sioncronaich/*``.  Defaults to ``/sioncronaich``.
+    """
+    return os.environ.get("SIONCRONAICH_ROOT_PATH", "/sioncronaich")
+
+
 def configure_logging() -> None:
     """Load logging configuration from the file named in ``LOG_CONFIG``.
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from sioncronaich.config import configure_logging, db_path
+from sioncronaich.config import configure_logging, db_path, root_path
 
 
 class TestDbPath:
@@ -23,6 +23,20 @@ class TestDbPath:
     def test_returns_path_type(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         monkeypatch.setenv("SIONCRONAICH_DB", str(tmp_path / "jobs.db"))
         assert isinstance(db_path(), Path)
+
+
+class TestRootPath:
+    def test_defaults_to_sioncronaich(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("SIONCRONAICH_ROOT_PATH", raising=False)
+        assert root_path() == "/sioncronaich"
+
+    def test_reads_from_env(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ROOT_PATH", "/monitoring")
+        assert root_path() == "/monitoring"
+
+    def test_empty_string_allowed(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ROOT_PATH", "")
+        assert root_path() == ""
 
 
 class TestConfigureLogging:

@@ -39,6 +39,7 @@ The app reads the following environment variables:
 | Environment variable | Default | Purpose |
 |---|---|---|
 | `SIONCRONAICH_DB` | `~/.local/share/sioncronaich/jobs.db` | SQLite database path |
+| `SIONCRONAICH_ROOT_PATH` | `/sioncronaich` | ASGI root path when mounted behind a reverse proxy |
 | `LOG_CONFIG` | *(unset — logs to stderr at INFO)* | Path to a YAML logging config file |
 
 ### 2 — Wrap a command
@@ -58,7 +59,15 @@ Options:
   --name TEXT      Human-readable label for this job  [required]
   --endpoint TEXT  URL of the POST /jobs endpoint
                    [default: http://127.0.0.1:8716/jobs]
-  --timeout INT    HTTP request timeout in seconds  [default: 10]
+    --timeout INT    HTTP request timeout in seconds  [default: 10]
+```
+
+The endpoint can also be set via the `SIONCRONAICH_ENDPOINT` environment
+variable so you don't have to repeat it in every crontab entry. The
+`--endpoint` flag takes precedence if both are set.
+
+```bash
+export SIONCRONAICH_ENDPOINT=http://mon.example.com/sioncronaich/jobs
 ```
 
 ### 3 — Add to crontab
@@ -86,12 +95,38 @@ Interactive API docs are served at **http://127.0.0.1:8716/docs**.
 
 ---
 
+## Reverse proxy with Caddy
+
+sioncronaich is designed to be mounted at a sub-path behind a reverse proxy.
+The default sub-path is `/sioncronaich`; override it with
+`SIONCRONAICH_ROOT_PATH`.
+
+```caddy
+example.com {
+    handle_path /sioncronaich/* {
+        reverse_proxy 127.0.0.1:8716
+    }
+}
+```
+
+Start the app with the matching root path:
+
+```bash
+SIONCRONAICH_ROOT_PATH=/sioncronaich \
+  uv run uvicorn --factory sioncronaich.app:create_app --host 127.0.0.1 --port 8716
+```
+
+The dashboard is then available at **https://example.com/sioncronaich** and
+the ingest endpoint at **https://example.com/sioncronaich/jobs**.
+
+---
+
 ## Project layout
 
 ```
 src/sioncronaich/
 ├── __init__.py          version
-├── config.py            env var helpers (db_path, configure_logging)
+├── config.py            env var helpers (db_path, root_path, configure_logging)
 ├── models.py            Pydantic models (JobResultCreate, JobResult)
 ├── db.py                SQLite CRUD helpers
 ├── app.py               FastAPI application

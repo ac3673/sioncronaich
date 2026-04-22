@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import socket
 import subprocess
@@ -73,9 +74,9 @@ def _post_result(endpoint: str, payload: JobResultCreate, timeout: int) -> None:
 )
 @click.option(
     "--endpoint",
-    default="http://127.0.0.1:8716/jobs",
+    default=lambda: os.environ.get("SIONCRONAICH_ENDPOINT", "http://127.0.0.1:8716/jobs"),
     show_default=True,
-    help="URL of the sioncronaich POST /jobs endpoint.",
+    help="URL of the sioncronaich POST /jobs endpoint. Overrides SIONCRONAICH_ENDPOINT env var.",
 )
 @click.option(
     "--timeout",

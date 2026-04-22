@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
-from sioncronaich.config import configure_logging, db_path
+from sioncronaich.config import configure_logging, db_path, root_path
 from sioncronaich.db import get_jobs, init_db, insert_job
 from sioncronaich.models import JobResult, JobResultCreate
 
@@ -35,6 +35,7 @@ app = FastAPI(
     description="Cron job output capture and monitoring",
     version=__version__,
     lifespan=_lifespan,
+    root_path=root_path(),
 )
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
