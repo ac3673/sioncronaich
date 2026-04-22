@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import socket
 import subprocess
 import sys
@@ -18,10 +19,18 @@ def _now() -> datetime:
 
 
 def _run_command(command: tuple[str, ...]) -> tuple[str, str, int, datetime, datetime]:
-    """Execute *command*, capture output and return (stdout, stderr, exit_code, started_at, finished_at)."""
+    """Execute *command* via the system shell, capture output and return
+    (stdout, stderr, exit_code, started_at, finished_at).
+
+    Running via the shell allows shell built-ins (cd, export, …) and
+    operators (&&, ||, ;, pipes) to work as expected.
+    """
     started_at = _now()
-    result = subprocess.run(
-        list(command),
+    # shlex.join() produces POSIX quoting for sh; Windows cmd.exe needs plain joining
+    shell_cmd = " ".join(command) if sys.platform == "win32" else shlex.join(command)
+    result = subprocess.run(  # noqa: S602 S604
+        shell_cmd,
+        shell=True,
         capture_output=True,
         text=True,
     )

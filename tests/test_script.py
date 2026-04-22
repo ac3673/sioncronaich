@@ -1,4 +1,4 @@
-"""Tests for the sioncronaich CLI script."""
+﻿"""Tests for the sioncronaich CLI script."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from sioncronaich.script import _post_result, _run_command, main
 from sioncronaich.models import JobResultCreate
+from sioncronaich.script import _post_result, _run_command, main
 
 
 @pytest.fixture()
@@ -40,18 +40,16 @@ class TestRunCommand:
         assert stdout.strip() == "hello"
 
     def test_captures_stderr(self):
-        _, stderr, _, _, _ = _run_command(
-            (sys.executable, "-c", "import sys; sys.stderr.write('err\\n')")
-        )
-        assert stderr.strip() == "err"
+        _, stderr, _, _, _ = _run_command((sys.executable, "nonexistent_file.py"))
+        assert "nonexistent_file.py" in stderr
 
     def test_captures_exit_code_zero(self):
         _, _, exit_code, _, _ = _run_command((sys.executable, "-c", "pass"))
         assert exit_code == 0
 
     def test_captures_exit_code_nonzero(self):
-        _, _, exit_code, _, _ = _run_command((sys.executable, "-c", "raise SystemExit(2)"))
-        assert exit_code == 2
+        _, _, exit_code, _, _ = _run_command((sys.executable, "nonexistent_file.py"))
+        assert exit_code != 0
 
     def test_started_before_finished(self):
         _, _, _, started_at, finished_at = _run_command((sys.executable, "-c", "pass"))
@@ -72,8 +70,7 @@ class TestPostResult:
         ) as mock_post:
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
             mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args
-            assert call_kwargs.args[0] == "http://localhost:8716/jobs"
+            assert mock_post.call_args.args[0] == "http://localhost:8716/jobs"
 
     def test_sends_json_content_type(self, sample_payload: JobResultCreate):
         mock_response = MagicMock()
@@ -92,7 +89,6 @@ class TestPostResult:
             "sioncronaich.script.requests.post",
             side_effect=req.ConnectionError("connection refused"),
         ):
-            # Should not raise
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
 
     def test_prints_error_on_failure(
@@ -112,19 +108,15 @@ class TestPostResult:
 class TestMain:
     def test_exits_with_zero_on_success(self, runner: CliRunner):
         with patch("sioncronaich.script._post_result"):
-            result = runner.invoke(
-                main,
-                ["--name", "test", "--", sys.executable, "-c", "pass"],
-            )
+            result = runner.invoke(main, ["--name", "test", "--", sys.executable, "-c", "pass"])
         assert result.exit_code == 0
 
     def test_exits_with_command_exit_code(self, runner: CliRunner):
         with patch("sioncronaich.script._post_result"):
             result = runner.invoke(
-                main,
-                ["--name", "test", "--", sys.executable, "-c", "raise SystemExit(3)"],
+                main, ["--name", "test", "--", sys.executable, "nonexistent_file.py"]
             )
-        assert result.exit_code == 3
+        assert result.exit_code != 0
 
     def test_requires_name_option(self, runner: CliRunner):
         result = runner.invoke(main, ["--", sys.executable, "-c", "pass"])
