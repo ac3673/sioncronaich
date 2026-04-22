@@ -1,0 +1,14 @@
+2026-04-22 13:32:53 INFO     sioncronaich.app â€” Database ready at C:\Users\wacc\.local\share\sioncronaich\jobs.db
+2026-04-22 13:32:53 INFO     uvicorn.error â€” Application startup complete.
+2026-04-22 13:32:53 INFO     uvicorn.error â€” Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-04-22 13:33:04 INFO     uvicorn.error â€” Shutting down
+2026-04-22 13:33:04 INFO     uvicorn.error â€” Waiting for application shutdown.
+2026-04-22 13:33:04 INFO     uvicorn.error â€” Application shutdown complete.
+2026-04-22 13:33:04 INFO     uvicorn.error â€” Finished server process [28836]
+2026-04-22 13:34:11 INFO     sioncronaich.app - Database ready at C:\Users\wacc\.local\share\sioncronaich\jobs.db
+2026-04-22 13:34:11 INFO     uvicorn.error - Application startup complete.
+2026-04-22 13:34:11 INFO     uvicorn.error - Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-04-22 13:45:33 INFO     uvicorn.error - Shutting down
+2026-04-22 13:45:34 INFO     uvicorn.error - Waiting for application shutdown.
+2026-04-22 13:45:34 INFO     uvicorn.error - Application shutdown complete.
+2026-04-22 13:45:34 INFO     uvicorn.error - Finished server process [42300]

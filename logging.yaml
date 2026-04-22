@@ -1,0 +1,35 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(asctime)s %(name)-10s %(levelname)-8s %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: default
+    stream: ext://sys.stderr
+
+  file:
+    class: logging.handlers.RotatingFileHandler
+    formatter: default
+    filename: sioncronaich.log
+    maxBytes: 10485760   # 10 MiB
+    backupCount: 5
+    encoding: utf-8
+
+root:
+  level: WARNING
+  handlers: [console]
+
+loggers:
+  sioncronaich:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  uvicorn:
+    level: INFO
+    handlers: [console, file]
+    propagate: false

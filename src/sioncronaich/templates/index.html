@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>sioncronaich — cron job monitor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
+      background: #0f1117;
+      color: #e2e8f0;
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.25rem;
+      color: #a78bfa;
+      letter-spacing: 0.05em;
+    }
+
+    .subtitle {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-bottom: 1.5rem;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      border-radius: 0.5rem;
+      border: 1px solid #1e293b;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    thead {
+      background: #1e293b;
+    }
+
+    th {
+      padding: 0.65rem 0.9rem;
+      text-align: left;
+      color: #94a3b8;
+      font-weight: 600;
+      white-space: nowrap;
+      border-bottom: 1px solid #334155;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #1e293b;
+      transition: background 0.1s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #1a2235; }
+
+    td {
+      padding: 0.55rem 0.9rem;
+      vertical-align: top;
+      color: #cbd5e1;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .badge-ok  { background: #14532d; color: #4ade80; }
+    .badge-err { background: #450a0a; color: #f87171; }
+
+    .cmd {
+      color: #e2e8f0;
+      max-width: 28ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dur { color: #7dd3fc; }
+    .ts  { color: #64748b; white-space: nowrap; }
+
+    details { margin-top: 0.1rem; }
+
+    summary {
+      cursor: pointer;
+      color: #7c3aed;
+      font-size: 0.75rem;
+      user-select: none;
+      list-style: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: "▶ "; font-size: 0.6rem; }
+    details[open] summary::before { content: "▼ "; }
+
+    pre {
+      margin-top: 0.4rem;
+      padding: 0.6rem 0.8rem;
+      background: #0a0e17;
+      border: 1px solid #1e293b;
+      border-radius: 0.35rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 18rem;
+      overflow-y: auto;
+      font-size: 0.78rem;
+      color: #94a3b8;
+      min-width: 30ch;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 3rem;
+      color: #334155;
+      font-size: 0.9rem;
+    }
+
+    .pagination {
+      margin-top: 1.2rem;
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+
+    .pagination a {
+      color: #a78bfa;
+      text-decoration: none;
+      padding: 0.25rem 0.6rem;
+      border: 1px solid #334155;
+      border-radius: 0.3rem;
+    }
+    .pagination a:hover { background: #1e293b; }
+  </style>
+</head>
+<body>
+
+  <h1>sioncronaich</h1>
+  <p class="subtitle">cron job output monitor &mdash; showing {{ jobs | length }} result(s)</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Job</th>
+          <th>Host</th>
+          <th>Status</th>
+          <th>Command</th>
+          <th>Duration</th>
+          <th>Started (UTC)</th>
+          <th>stdout</th>
+          <th>stderr</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if jobs %}
+          {% for job in jobs %}
+          <tr>
+            <td class="ts">{{ job.id }}</td>
+            <td>{{ job.job_name }}</td>
+            <td>{{ job.hostname }}</td>
+            <td>
+              {% if job.succeeded %}
+                <span class="badge badge-ok">OK&nbsp;(0)</span>
+              {% else %}
+                <span class="badge badge-err">ERR&nbsp;({{ job.exit_code }})</span>
+              {% endif %}
+            </td>
+            <td><span class="cmd" title="{{ job.command }}">{{ job.command }}</span></td>
+            <td class="dur">{{ "%.3f"|format(job.duration_seconds) }}s</td>
+            <td class="ts">{{ job.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+            <td>
+              {% if job.stdout %}
+                <details>
+                  <summary>show stdout</summary>
+                  <pre>{{ job.stdout }}</pre>
+                </details>
+              {% else %}
+                <span style="color:#334155">(empty)</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if job.stderr %}
+                <details>
+                  <summary>show stderr</summary>
+                  <pre>{{ job.stderr }}</pre>
+                </details>
+              {% else %}
+                <span style="color:#334155">(empty)</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="8" class="empty">No job results yet — run <code>sioncronaich-run</code> to capture your first job.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination">
+    {% if offset > 0 %}
+      <a href="/?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}">&larr; newer</a>
+    {% endif %}
+    <span>offset {{ offset }}, limit {{ limit }}</span>
+    {% if jobs | length == limit %}
+      <a href="/?limit={{ limit }}&offset={{ offset + limit }}">older &rarr;</a>
+    {% endif %}
+  </div>
+
+</body>
+</html>

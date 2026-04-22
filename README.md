@@ -1,0 +1,126 @@
+# sioncronaich
+
+<img src="img/sioncronaich.png" alt="sioncronaich" width="200">
+
+> *Sioncronaich* (Scots Gaelic) — to synchronise, to chronicle.
+
+A lightweight cron-job monitoring tool written in Python 3.12.
+
+`sioncronaich` wraps any shell command, captures its **stdout**, **stderr** and **exit code**,
+then POSTs the result to the sioncronaich web app, which stores everything in a local SQLite
+database and renders it in a simple web dashboard.
+
+---
+
+## Installation
+
+```bash
+# From source with uv:
+git clone <repo>
+cd sioncronaich
+uv sync
+```
+
+---
+
+## Quick start
+
+### 1 — Start the web app
+
+```bash
+uv run uvicorn --factory sioncronaich.app:create_app --host 127.0.0.1 --port 8716
+```
+
+Pass `--host`, `--port`, and any other server options directly to uvicorn.
+See `uvicorn --help` for the full list.
+
+The app reads the following environment variables:
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `SIONCRONAICH_DB` | `~/.local/share/sioncronaich/jobs.db` | SQLite database path |
+| `LOG_CONFIG` | *(unset — logs to stderr at INFO)* | Path to a YAML logging config file |
+
+### 2 — Wrap a command
+
+```bash
+sioncronaich --name "daily-backup" -- /usr/local/bin/backup.sh --full
+```
+
+The wrapper exits with **the same exit code** as the wrapped command, so
+existing cron alerting is unaffected. If posting to the web app fails, the
+error is printed to stderr but the exit code is still that of the wrapped job.
+
+```
+Usage: sioncronaich [OPTIONS] COMMAND...
+
+Options:
+  --name TEXT      Human-readable label for this job  [required]
+  --endpoint TEXT  URL of the POST /jobs endpoint
+                   [default: http://127.0.0.1:8716/jobs]
+  --timeout INT    HTTP request timeout in seconds  [default: 10]
+```
+
+### 3 — Add to crontab
+
+```crontab
+# m   h  dom mon dow  command
+0     3  *   *   *    sioncronaich --name daily-backup -- /usr/local/bin/backup.sh
+*/5   *  *   *   *    sioncronaich --name health-check -- /usr/local/bin/check.sh
+```
+
+### 4 — View the dashboard
+
+Open **http://127.0.0.1:8716** in a browser for a colour-coded table of recent
+job runs. stdout / stderr are available in collapsible panels.
+
+The raw JSON API is also available:
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/jobs` | Ingest a new job result (used by `sioncronaich`) |
+| `GET` | `/jobs` | List job results as JSON (newest first) |
+| `GET` | `/` | HTML dashboard |
+
+Interactive API docs are served at **http://127.0.0.1:8716/docs**.
+
+---
+
+## Project layout
+
+```
+src/sioncronaich/
+├── __init__.py          version
+├── config.py            env var helpers (db_path, configure_logging)
+├── models.py            Pydantic models (JobResultCreate, JobResult)
+├── db.py                SQLite CRUD helpers
+├── app.py               FastAPI application
+├── script.py            sioncronaich CLI wrapper
+└── templates/
+    └── index.html       Jinja2 dashboard template
+logging.yaml             default logging configuration
+pyproject.toml
+README.md
+```
+
+---
+
+## Logging
+
+By default the app logs to stderr at INFO level. To use a custom logging
+configuration, point `LOG_CONFIG` at a YAML file in the standard
+[`logging.config.dictConfig`](https://docs.python.org/3/library/logging.config.html#logging-config-dictschema)
+format. A ready-to-use example is provided at `logging.yaml`:
+
+```bash
+LOG_CONFIG=logging.yaml uv run uvicorn --factory sioncronaich.app:create_app
+```
+
+---
+
+## Development
+
+```bash
+uv sync --extra dev --extra server
+pytest
+```

@@ -1,0 +1,103 @@
+[project]
+name = "sioncronaich"
+version = "0.1.0"
+description = "Capture stdout, stderr and exit codes from cron jobs and view them in a web UI"
+readme = "README.md"
+authors = [
+    { name = "Adam Cuthbert", email = "54388772+ac3673@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2",
+    "requests>=2.32",
+    "click>=8.1",
+]
+
+[project.scripts]
+sioncronaich = "sioncronaich.script:main"
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "commitizen>=4.11.0",
+    "genbadge[coverage]>=1.1",
+    "httpxyz>=0.30",
+    "prek>=0.2.27",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.11",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 96
+fix = true
+target-version = "py312"
+output-format = "concise"
+
+[tool.ruff.lint]
+select = [
+    "A",    # flake8-builtins
+    "ARG",  # flake8-unused-arguments
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "C90",  # mccabe
+    "DTZ",  # flake8-datetimez
+    "E",    # pycodestyle error
+    "F",    # pyflakes
+    "FAST", # fastapi
+    "I",    # isort
+    "PT",   # flake8-pytest-style
+    "PTH",  # flake8-use-pathlib
+    "RUF",  # Ruff-specific rules
+    "SIM",  # flake8-simplify
+    "UP",   # pyupgrade
+    "W",    # pycodestyle warning
+]
+ignore = [
+    "B008",   # function-call-in-default-argument
+    "E501",   # line-too-long, handled by the formatter
+    "PT011",  # pytest-raises-too-broad
+    "PTH201", # path-constructor-current-directory
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = [
+    "ANN201", # missing-return-type-undocumented-public-function
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.mypy]
+show_column_numbers = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+log_cli = true
+log_level = "DEBUG"
+log_format = "%(asctime)s.%(msecs).03d | %(name)s | %(levelname)s: %(message)s"
+log_date_format = "%Y-%m-%d %H:%M:%S"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_incremental = true
+changelog_file = "CHANGELOG.md"
+changelog_template = "changelog.md.j2"
+version_provider = "uv"
+version_files = [
+    "src/sioncronaich/__init__.py:__version__",
+]
