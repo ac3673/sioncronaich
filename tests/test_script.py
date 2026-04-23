@@ -10,7 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from sioncronaich.models import JobResultCreate
-from sioncronaich.script import _post_result, _run_command, main
+from sioncronaich.script import _infer_name, _post_result, _run_command, main
 
 
 @pytest.fixture
@@ -32,6 +32,49 @@ def sample_payload() -> JobResultCreate:
         started_at=started,
         finished_at=finished,
     )
+
+
+class TestInferName:
+    def test_infers_stem_from_py_path(self):
+        assert _infer_name(("/path/to/do_important_job.py",)) == "do_important_job"
+
+    def test_infers_stem_from_sh_path(self):
+        assert _infer_name(("/usr/local/bin/backup.sh",)) == "backup"
+
+    def test_infers_stem_from_deep_nested_path(self):
+        assert (
+            _infer_name(("python", "/very/deep/nested/nightly_report.py")) == "nightly_report"
+        )
+
+    def test_skips_interpreter_token_and_finds_script(self):
+        assert _infer_name(("python", "/path/to/run_etl.py")) == "run_etl"
+
+    def test_returns_first_matching_token(self):
+        """When multiple tokens match, the first one wins."""
+        assert _infer_name(("/scripts/first.py", "/scripts/second.py")) == "first"
+
+    def test_returns_none_when_no_known_extension(self):
+        assert _infer_name(("python", "-c", "print('hi')")) is None
+
+    def test_returns_none_for_empty_command(self):
+        assert _infer_name(()) is None
+
+    def test_extension_matching_is_case_insensitive(self):
+        assert _infer_name(("/path/to/script.PY",)) == "script"
+
+    def test_strips_shell_operator_suffix_from_token(self):
+        """Tokens like 'script.py;rm -rf /' should still extract 'script'."""
+        assert _infer_name(("script.py;rm",)) == "script"
+
+    @pytest.mark.parametrize(
+        "extension",
+        [".sh", ".bash", ".zsh", ".rb", ".pl", ".php", ".js", ".ts", ".r", ".R"],
+    )
+    def test_recognises_all_known_extensions(self, extension: str):
+        assert _infer_name((f"/path/to/myjob{extension}",)) == "myjob"
+
+    def test_bare_filename_without_directory(self):
+        assert _infer_name(("sync_data.py",)) == "sync_data"
 
 
 class TestRunCommand:
@@ -166,10 +209,53 @@ class TestMain:
             )
         assert result.exit_code != 0
 
-    def test_requires_name_option(self, runner: CliRunner):
+    def test_error_when_name_cannot_be_inferred(self, runner: CliRunner):
+        """Commands with no known script extension and no --name flag should fail
+        with a helpful message directing the user to --name.
+        """
         result = runner.invoke(main, ["--", sys.executable, "-c", "pass"])
         assert result.exit_code != 0
         assert "--name" in result.output
+
+    def test_infers_name_from_py_script_in_command(self, runner: CliRunner):
+        """When the command contains a .py path, --name can be omitted."""
+        payloads: list = []
+
+        def fake_post(_endpoint, payload, _timeout):
+            payloads.append(payload)
+
+        with patch("sioncronaich.script._post_result", side_effect=fake_post):
+            runner.invoke(main, ["--", sys.executable, "/path/to/nightly_report.py"])
+        # The command will fail (file doesn't exist) but the name should be inferred
+        # before execution; check the payload that was posted.
+        assert payloads[0].job_name == "nightly_report"
+
+    def test_infers_name_from_sh_script_in_command(self, runner: CliRunner):
+        """When the first token itself is a .sh path, --name can be omitted."""
+        payloads: list = []
+
+        def fake_post(_endpoint, payload, _timeout):
+            payloads.append(payload)
+
+        with patch("sioncronaich.script._post_result", side_effect=fake_post):
+            runner.invoke(main, ["--", "/usr/local/bin/backup.sh"])
+
+        assert payloads[0].job_name == "backup"
+
+    def test_explicit_name_takes_precedence_over_inferred(self, runner: CliRunner):
+        """--name should always win over whatever _infer_name would return."""
+        payloads: list = []
+
+        def fake_post(_endpoint, payload, _timeout):
+            payloads.append(payload)
+
+        with patch("sioncronaich.script._post_result", side_effect=fake_post):
+            runner.invoke(
+                main,
+                ["--name", "my-override", "--", sys.executable, "/scripts/other_job.py"],
+            )
+
+        assert payloads[0].job_name == "my-override"
 
     def test_requires_command_argument(self, runner: CliRunner):
         result = runner.invoke(main, ["--name", "test"])

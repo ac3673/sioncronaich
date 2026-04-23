@@ -3,16 +3,36 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import socket
 import subprocess
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 import click
 import requests
 
 from sioncronaich.models import JobResultCreate
+
+_KNOWN_EXTENSIONS: frozenset[str] = frozenset(
+    [".py", ".sh", ".bash", ".zsh", ".rb", ".pl", ".php", ".js", ".ts", ".r", ".R"]
+)
+
+
+def _infer_name(command: tuple[str, ...]) -> str | None:
+    """Scan command tokens for a path-like segment with a known script extension
+    and return its stem as the job name.
+
+    e.g. ('/usr/bin/python', '/path/to/do_important_job.py') -> 'do_important_job'
+    """
+    for token in command:
+        # Strip any leading shell quoting artefacts before checking
+        p = Path(re.split(r"[\s;|&]", token)[0])
+        if p.suffix.lower() in _KNOWN_EXTENSIONS:
+            return p.stem
+    return None
 
 
 def _now() -> datetime:
@@ -70,8 +90,13 @@ def _post_result(endpoint: str, payload: JobResultCreate, timeout: int) -> None:
 )
 @click.option(
     "--name",
-    required=True,
-    help="Human-readable label for this job (e.g. 'daily-backup').",
+    default=None,
+    required=False,
+    help=(
+        "Human-readable label for this job (e.g. 'daily-backup'). "
+        "When omitted the name is inferred from the first script path found in "
+        "COMMAND that carries a known extension (.py, .sh, .rb, …)."
+    ),
 )
 @click.option(
     "--endpoint",
@@ -87,11 +112,18 @@ def _post_result(endpoint: str, payload: JobResultCreate, timeout: int) -> None:
 )
 @click.argument("command", nargs=-1, type=click.UNPROCESSED, required=True)
 def main(
-    name: str,
+    name: str | None,
     endpoint: str,
     timeout: int,
     command: tuple[str, ...],
 ) -> None:
+    if name is None:
+        name = _infer_name(command)
+    if name is None:
+        raise click.UsageError(
+            "Could not infer a job name from the command. Please supply --name explicitly."
+        )
+
     stdout, stderr, exit_code, started_at, finished_at = _run_command(command)
 
     payload = JobResultCreate(
