@@ -33,15 +33,17 @@
         <td class="dur">{{ "%.3f"|format(job.duration_seconds) }}s</td>
         <td class="ts">{{ job.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
         <td>
-          <details class="output-panel" data-job-id="{{ job.id }}" data-field="stdout">
-            <summary>show stdout</summary>
-            <pre class="loading">loading…</pre>
+          <details>
+            <summary hx-get="{{ request.url_for('job_output_field', job_id=job.id, field='stdout') }}"
+              hx-trigger="click once" hx-target="next pre" hx-swap="innerHTML">show stdout</summary>
+            <pre></pre>
           </details>
         </td>
         <td>
-          <details class="output-panel" data-job-id="{{ job.id }}" data-field="stderr">
-            <summary>show stderr</summary>
-            <pre class="loading">loading…</pre>
+          <details>
+            <summary hx-get="{{ request.url_for('job_output_field', job_id=job.id, field='stderr') }}"
+              hx-trigger="click once" hx-target="next pre" hx-swap="innerHTML">show stderr</summary>
+            <pre></pre>
           </details>
         </td>
       </tr>
@@ -57,10 +59,14 @@
 
 <div class="pagination">
   {% if offset > 0 %}
-  <a href="/?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">&larr; newer</a>
+  <a
+    href="{{ request.url_for('dashboard') }}?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">&larr;
+    newer</a>
   {% endif %}
   <span>offset {{ offset }}, limit {{ limit }}</span>
   {% if jobs | length == limit %}
-  <a href="/?limit={{ limit }}&offset={{ offset + limit }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">older &rarr;</a>
+  <a
+    href="{{ request.url_for('dashboard') }}?limit={{ limit }}&offset={{ offset + limit }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">older
+    &rarr;</a>
   {% endif %}
 </div>

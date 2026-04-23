@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
@@ -19,6 +21,7 @@ from sioncronaich.models import JobResult, JobResultCreate
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
+_STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -39,6 +42,7 @@ app = FastAPI(
 )
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +85,17 @@ def job_output(job_id: int) -> JSONResponse:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return JSONResponse({"stdout": job.stdout, "stderr": job.stderr})
+
+
+@app.get("/jobs/{job_id}/output/{field}", response_class=HTMLResponse)
+def job_output_field(job_id: int, field: str) -> HTMLResponse:
+    """Return a single output field as an HTML-escaped fragment for htmx."""
+    if field not in ("stdout", "stderr"):
+        raise HTTPException(status_code=400, detail="field must be stdout or stderr")
+    job = get_job_by_id(job_id, db_path=db_path())
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return HTMLResponse(html.escape(getattr(job, field) or "(empty)"))
 
 
 # ---------------------------------------------------------------------------

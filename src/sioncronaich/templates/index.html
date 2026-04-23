@@ -5,9 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>sioncronaich — cron job monitor</title>
-  <script src="https://unpkg.com/htmx.org@2.0.4"
-    integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-    crossorigin="anonymous"></script>
+  <script src="{{ request.url_for('static', path='htmx.min.js') }}"></script>
   <style>
     *,
     *::before,
@@ -291,9 +289,9 @@
 
 <body>
 
-  <h1><a href="/">sion<span class="cron">cron</span>aich</a></h1>
+  <h1><a href="{{ request.url_for('dashboard') }}">sion<span class="cron">cron</span>aich</a></h1>
   <!-- filter form — htmx partial updates keep focus while typing -->
-  <form class="filters" id="filter-form" hx-get="/table" hx-target="#results"
+  <form class="filters" id="filter-form" hx-get="{{ request.url_for('table_partial') }}" hx-target="#results"
     hx-trigger="input delay:400ms from:[type='search'], change from:select, submit" hx-push-url="false">
     <input type="hidden" name="limit" value="{{ limit }}" />
     <input type="hidden" name="offset" value="0" />
@@ -306,7 +304,7 @@
     </select>
     <input name="command" type="search" placeholder="Command…" value="{{ command }}" />
     <button type="submit">filter</button>
-    <a class="clear-link" href="/?limit={{ limit }}">✕ clear</a>
+    <a class="clear-link" href="{{ request.url_for('dashboard') }}?limit={{ limit }}">✕ clear</a>
   </form>
 
   <div id="results">
@@ -344,15 +342,17 @@
             <td class="dur">{{ "%.3f"|format(job.duration_seconds) }}s</td>
             <td class="ts">{{ job.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
             <td>
-              <details class="output-panel" data-job-id="{{ job.id }}" data-field="stdout">
-                <summary>show stdout</summary>
-                <pre class="loading">loading…</pre>
+              <details>
+                <summary hx-get="{{ request.url_for('job_output_field', job_id=job.id, field='stdout') }}"
+                  hx-trigger="click once" hx-target="next pre" hx-swap="innerHTML">show stdout</summary>
+                <pre></pre>
               </details>
             </td>
             <td>
-              <details class="output-panel" data-job-id="{{ job.id }}" data-field="stderr">
-                <summary>show stderr</summary>
-                <pre class="loading">loading…</pre>
+              <details>
+                <summary hx-get="{{ request.url_for('job_output_field', job_id=job.id, field='stderr') }}"
+                  hx-trigger="click once" hx-target="next pre" hx-swap="innerHTML">show stderr</summary>
+                <pre></pre>
               </details>
             </td>
           </tr>
@@ -370,41 +370,18 @@
     <div class="pagination">
       {% if offset > 0 %}
       <a
-        href="/?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">&larr;
+        href="{{ request.url_for('dashboard') }}?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">&larr;
         newer</a>
       {% endif %}
       <span>offset {{ offset }}, limit {{ limit }}</span>
       {% if jobs | length == limit %}
       <a
-        href="/?limit={{ limit }}&offset={{ offset + limit }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">older
+        href="{{ request.url_for('dashboard') }}?limit={{ limit }}&offset={{ offset + limit }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">older
         &rarr;</a>
       {% endif %}
     </div>
 
   </div>
-
-  <script>
-    document.getElementById('results').addEventListener('toggle', function (e) {
-      var details = e.target.closest('details.output-panel');
-      if (!details || !details.open) return;
-      var pre = details.querySelector('pre');
-      pre.className = 'loading';
-      pre.textContent = 'loading\u2026';
-      fetch('jobs/' + details.dataset.jobId + '/output')
-        .then(function (r) {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.json();
-        })
-        .then(function (data) {
-          pre.className = '';
-          pre.textContent = data[details.dataset.field] || '(empty)';
-        })
-        .catch(function (err) {
-          pre.className = 'load-error';
-          pre.textContent = 'Error: ' + err.message;
-        });
-    }, true);
-  </script>
 
 </body>
 
