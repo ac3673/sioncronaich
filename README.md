@@ -97,9 +97,8 @@ The default sub-path is `/sioncronaich`; override it with
 
 ```caddy
 example.com {
-    handle_path /sioncronaich/* {
-        reverse_proxy 127.0.0.1:8716
-    }
+        reverse_proxy /sioncronaich/* 127.0.0.1:8716
+        reverse_proxy /sioncronaich* 127.0.0.1:8716
 }
 ```
 
