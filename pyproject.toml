@@ -1,6 +1,6 @@
 [project]
 name = "sioncronaich"
-version = "0.2.0"
+version = "0.2.1"
 description = "Capture stdout, stderr and exit codes from cron jobs and view them in a web UI"
 readme = "README.md"
 authors = [
