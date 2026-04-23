@@ -88,6 +88,42 @@ def job_output(job_id: int) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
+@app.get("/table", response_class=HTMLResponse)
+def table_partial(
+    request: Request,
+    limit: int = 200,
+    offset: int = 0,
+    job_name: str | None = None,
+    hostname: str | None = None,
+    status: str | None = None,
+    command: str | None = None,
+) -> Response:
+    """Return just the table+pagination fragment for htmx partial updates."""
+    jobs = get_jobs(
+        limit=limit,
+        offset=offset,
+        job_name=job_name,
+        hostname=hostname,
+        status=status,
+        command=command,
+        exclude_output=True,
+        db_path=db_path(),
+    )
+    return templates.TemplateResponse(
+        request,
+        "table_partial.html",
+        {
+            "jobs": jobs,
+            "limit": limit,
+            "offset": offset,
+            "job_name": job_name or "",
+            "hostname": hostname or "",
+            "status": status or "",
+            "command": command or "",
+        },
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,

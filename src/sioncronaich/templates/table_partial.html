@@ -1,0 +1,66 @@
+<p class="subtitle">cron job output monitor &mdash; showing {{ jobs | length }} result(s)</p>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Job</th>
+        <th>Host</th>
+        <th>Status</th>
+        <th>Command</th>
+        <th>Duration</th>
+        <th>Started (UTC)</th>
+        <th>stdout</th>
+        <th>stderr</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if jobs %}
+      {% for job in jobs %}
+      <tr>
+        <td class="ts">{{ job.id }}</td>
+        <td>{{ job.job_name }}</td>
+        <td>{{ job.hostname }}</td>
+        <td>
+          {% if job.succeeded %}
+          <span class="badge badge-ok">OK&nbsp;(0)</span>
+          {% else %}
+          <span class="badge badge-err">ERR&nbsp;({{ job.exit_code }})</span>
+          {% endif %}
+        </td>
+        <td><span class="cmd" title="{{ job.command }}">{{ job.command }}</span></td>
+        <td class="dur">{{ "%.3f"|format(job.duration_seconds) }}s</td>
+        <td class="ts">{{ job.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+        <td>
+          <details class="output-panel" data-job-id="{{ job.id }}" data-field="stdout">
+            <summary>show stdout</summary>
+            <pre class="loading">loading…</pre>
+          </details>
+        </td>
+        <td>
+          <details class="output-panel" data-job-id="{{ job.id }}" data-field="stderr">
+            <summary>show stderr</summary>
+            <pre class="loading">loading…</pre>
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+      {% else %}
+      <tr>
+        <td colspan="9" class="empty">No job results yet — run <code>sioncronaich</code> to capture your first job.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="pagination">
+  {% if offset > 0 %}
+  <a href="/?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">&larr; newer</a>
+  {% endif %}
+  <span>offset {{ offset }}, limit {{ limit }}</span>
+  {% if jobs | length == limit %}
+  <a href="/?limit={{ limit }}&offset={{ offset + limit }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">older &rarr;</a>
+  {% endif %}
+</div>
