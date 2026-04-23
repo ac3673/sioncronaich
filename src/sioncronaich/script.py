@@ -32,6 +32,7 @@ def _run_command(command: tuple[str, ...]) -> tuple[str, str, int, datetime, dat
     result = subprocess.run(
         shell_cmd,
         shell=True,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
     )
