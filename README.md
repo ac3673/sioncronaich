@@ -17,17 +17,6 @@ database and renders it in a simple web dashboard.
 
 ---
 
-## Installation
-
-```bash
-# From source with uv:
-git clone <repo>
-cd sioncronaich
-uv sync
-```
-
----
-
 ## Quick start
 
 ### 1 — Start the web app
@@ -126,25 +115,6 @@ the ingest endpoint at **https://example.com/sioncronaich/jobs**.
 
 ---
 
-## Project layout
-
-```
-src/sioncronaich/
-├── __init__.py          version
-├── config.py            env var helpers (db_path, root_path, configure_logging)
-├── models.py            Pydantic models (JobResultCreate, JobResult)
-├── db.py                SQLite CRUD helpers
-├── app.py               FastAPI application
-├── script.py            sioncronaich CLI wrapper
-└── templates/
-    └── index.html       Jinja2 dashboard template
-logging.yaml             default logging configuration
-pyproject.toml
-README.md
-```
-
----
-
 ## Logging
 
 By default the app logs to stderr at INFO level. To use a custom logging
@@ -161,6 +131,6 @@ LOG_CONFIG=logging.yaml uv run uvicorn --factory sioncronaich.app:create_app
 ## Development
 
 ```bash
-uv sync --extra dev --extra server
-pytest
+uv sync --all-extras
+uv run prek install
 ```
