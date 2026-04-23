@@ -1,11 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>sioncronaich — cron job monitor</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
     body {
       font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
@@ -27,6 +34,71 @@
       margin-bottom: 1.5rem;
     }
 
+    /* filters */
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .filters input,
+    .filters select {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 0.35rem;
+      color: #e2e8f0;
+      font-family: inherit;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      outline: none;
+      min-width: 12ch;
+    }
+
+    .filters input:focus,
+    .filters select:focus {
+      border-color: #7c3aed;
+    }
+
+    .filters input::placeholder {
+      color: #475569;
+    }
+
+    .filters button {
+      background: none;
+      border: 1px solid #334155;
+      border-radius: 0.35rem;
+      color: #64748b;
+      font-family: inherit;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      cursor: pointer;
+    }
+
+    .filters button[type="submit"] {
+      border-color: #7c3aed;
+      color: #a78bfa;
+    }
+
+    .filters button[type="submit"]:hover {
+      background: #1e293b;
+      border-color: #a78bfa;
+      color: #e2e8f0;
+    }
+
+    .filters .clear-link {
+      color: #64748b;
+      text-decoration: none;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.5rem;
+    }
+
+    .filters .clear-link:hover {
+      color: #e2e8f0;
+    }
+
+    /* table */
     .table-wrapper {
       overflow-x: auto;
       border-radius: 0.5rem;
@@ -57,8 +129,13 @@
       transition: background 0.1s;
     }
 
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: #1a2235; }
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: #1a2235;
+    }
 
     td {
       padding: 0.55rem 0.9rem;
@@ -74,8 +151,16 @@
       font-weight: 700;
       letter-spacing: 0.03em;
     }
-    .badge-ok  { background: #14532d; color: #4ade80; }
-    .badge-err { background: #450a0a; color: #f87171; }
+
+    .badge-ok {
+      background: #14532d;
+      color: #4ade80;
+    }
+
+    .badge-err {
+      background: #450a0a;
+      color: #f87171;
+    }
 
     .cmd {
       color: #e2e8f0;
@@ -85,10 +170,19 @@
       white-space: nowrap;
     }
 
-    .dur { color: #7dd3fc; }
-    .ts  { color: #64748b; white-space: nowrap; }
+    .dur {
+      color: #7dd3fc;
+    }
 
-    details { margin-top: 0.1rem; }
+    .ts {
+      color: #64748b;
+      white-space: nowrap;
+    }
+
+    /* lazy output panels */
+    details {
+      margin-top: 0.1rem;
+    }
 
     summary {
       cursor: pointer;
@@ -97,9 +191,19 @@
       user-select: none;
       list-style: none;
     }
-    summary::-webkit-details-marker { display: none; }
-    summary::before { content: "▶ "; font-size: 0.6rem; }
-    details[open] summary::before { content: "▼ "; }
+
+    summary::-webkit-details-marker {
+      display: none;
+    }
+
+    summary::before {
+      content: "▶ ";
+      font-size: 0.6rem;
+    }
+
+    details[open] summary::before {
+      content: "▼ ";
+    }
 
     pre {
       margin-top: 0.4rem;
@@ -116,6 +220,15 @@
       min-width: 30ch;
     }
 
+    pre.loading {
+      color: #475569;
+      font-style: italic;
+    }
+
+    pre.load-error {
+      color: #f87171;
+    }
+
     .empty {
       text-align: center;
       padding: 3rem;
@@ -123,6 +236,7 @@
       font-size: 0.9rem;
     }
 
+    /* pagination */
     .pagination {
       margin-top: 1.2rem;
       display: flex;
@@ -139,13 +253,33 @@
       border: 1px solid #334155;
       border-radius: 0.3rem;
     }
-    .pagination a:hover { background: #1e293b; }
+
+    .pagination a:hover {
+      background: #1e293b;
+    }
   </style>
 </head>
+
 <body>
 
   <h1>sioncronaich</h1>
   <p class="subtitle">cron job output monitor &mdash; showing {{ jobs | length }} result(s)</p>
+
+  <!-- filter form — GET so filters are bookmarkable / appear in the URL -->
+  <form class="filters" method="get" action=".">
+    <input type="hidden" name="limit" value="{{ limit }}" />
+    <input type="hidden" name="offset" value="0" />
+    <input name="job_name" type="search" placeholder="Job name…" value="{{ job_name }}" />
+    <input name="hostname" type="search" placeholder="Host…" value="{{ hostname }}" />
+    <select name="status">
+      <option value="" {% if status=="" %}selected{% endif %}>All statuses</option>
+      <option value="ok" {% if status=="ok" %}selected{% endif %}>OK</option>
+      <option value="err" {% if status=="err" %}selected{% endif %}>ERR</option>
+    </select>
+    <input name="command" type="search" placeholder="Command…" value="{{ command }}" />
+    <button type="submit">filter</button>
+    <a class="clear-link" href="/?limit={{ limit }}">✕ clear</a>
+  </form>
 
   <div class="table-wrapper">
     <table>
@@ -164,47 +298,40 @@
       </thead>
       <tbody>
         {% if jobs %}
-          {% for job in jobs %}
-          <tr>
-            <td class="ts">{{ job.id }}</td>
-            <td>{{ job.job_name }}</td>
-            <td>{{ job.hostname }}</td>
-            <td>
-              {% if job.succeeded %}
-                <span class="badge badge-ok">OK&nbsp;(0)</span>
-              {% else %}
-                <span class="badge badge-err">ERR&nbsp;({{ job.exit_code }})</span>
-              {% endif %}
-            </td>
-            <td><span class="cmd" title="{{ job.command }}">{{ job.command }}</span></td>
-            <td class="dur">{{ "%.3f"|format(job.duration_seconds) }}s</td>
-            <td class="ts">{{ job.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-            <td>
-              {% if job.stdout %}
-                <details>
-                  <summary>show stdout</summary>
-                  <pre>{{ job.stdout }}</pre>
-                </details>
-              {% else %}
-                <span style="color:#334155">(empty)</span>
-              {% endif %}
-            </td>
-            <td>
-              {% if job.stderr %}
-                <details>
-                  <summary>show stderr</summary>
-                  <pre>{{ job.stderr }}</pre>
-                </details>
-              {% else %}
-                <span style="color:#334155">(empty)</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
+        {% for job in jobs %}
+        <tr>
+          <td class="ts">{{ job.id }}</td>
+          <td>{{ job.job_name }}</td>
+          <td>{{ job.hostname }}</td>
+          <td>
+            {% if job.succeeded %}
+            <span class="badge badge-ok">OK&nbsp;(0)</span>
+            {% else %}
+            <span class="badge badge-err">ERR&nbsp;({{ job.exit_code }})</span>
+            {% endif %}
+          </td>
+          <td><span class="cmd" title="{{ job.command }}">{{ job.command }}</span></td>
+          <td class="dur">{{ "%.3f"|format(job.duration_seconds) }}s</td>
+          <td class="ts">{{ job.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+          <td>
+            <details class="output-panel" data-job-id="{{ job.id }}" data-field="stdout">
+              <summary>show stdout</summary>
+              <pre class="loading">loading…</pre>
+            </details>
+          </td>
+          <td>
+            <details class="output-panel" data-job-id="{{ job.id }}" data-field="stderr">
+              <summary>show stderr</summary>
+              <pre class="loading">loading…</pre>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
         {% else %}
-          <tr>
-            <td colspan="8" class="empty">No job results yet — run <code>sioncronaich-run</code> to capture your first job.</td>
-          </tr>
+        <tr>
+          <td colspan="9" class="empty">No job results yet — run <code>sioncronaich</code> to capture your first job.
+          </td>
+        </tr>
         {% endif %}
       </tbody>
     </table>
@@ -212,13 +339,69 @@
 
   <div class="pagination">
     {% if offset > 0 %}
-      <a href="/?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}">&larr; newer</a>
+    <a
+      href="/?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">&larr;
+      newer</a>
     {% endif %}
     <span>offset {{ offset }}, limit {{ limit }}</span>
     {% if jobs | length == limit %}
-      <a href="/?limit={{ limit }}&offset={{ offset + limit }}">older &rarr;</a>
+    <a
+      href="/?limit={{ limit }}&offset={{ offset + limit }}&job_name={{ job_name }}&hostname={{ hostname }}&status={{ status }}&command={{ command }}">older
+      &rarr;</a>
     {% endif %}
   </div>
 
+  <script>
+    (function () {
+      // Cache fetched output per job id so repeated open/close does not re-fetch.
+      var cache = {};
+
+      document.querySelectorAll('details.output-panel').forEach(function (details) {
+        details.addEventListener('toggle', function () {
+          if (!details.open) return;
+
+          var jobId = details.dataset.jobId;
+          var field = details.dataset.field;
+          var pre = details.querySelector('pre');
+
+          if (cache[jobId]) {
+            renderOutput(pre, cache[jobId][field]);
+            return;
+          }
+
+          pre.className = 'loading';
+          pre.textContent = 'loading\u2026';
+
+          fetch('jobs/' + jobId + '/output')
+            .then(function (r) {
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              return r.json();
+            })
+            .then(function (data) {
+              cache[jobId] = data;
+              // Update both panels for this row in case both are open.
+              details.closest('tr')
+                .querySelectorAll('details.output-panel[data-job-id="' + jobId + '"]')
+                .forEach(function (d) {
+                  var p = d.querySelector('pre');
+                  if (d.open) renderOutput(p, data[d.dataset.field]);
+                  else p.className = '';
+                });
+            })
+            .catch(function (err) {
+              pre.className = 'load-error';
+              pre.textContent = 'Error: ' + err.message;
+            });
+        });
+      });
+
+      function renderOutput(pre, text) {
+        pre.className = '';
+        pre.textContent = text || '(empty)';
+      }
+    })();
+  </script>
+
 </body>
+
 </html>

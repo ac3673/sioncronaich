@@ -60,6 +60,20 @@ class TestPostJob:
         assert data["exit_code"] == 1
 
 
+class TestJobOutput:
+    def test_returns_stdout_and_stderr(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        response = client.get("/jobs/1/output")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stdout"] == JOB_PAYLOAD["stdout"]
+        assert data["stderr"] == JOB_PAYLOAD["stderr"]
+
+    def test_returns_404_for_missing_job(self, client: TestClient):
+        response = client.get("/jobs/999/output")
+        assert response.status_code == 404
+
+
 class TestListJobs:
     def test_empty_returns_empty_list(self, client: TestClient):
         response = client.get("/jobs")
@@ -92,6 +106,41 @@ class TestListJobs:
         assert offset_results[0]["id"] == all_results[2]["id"]
 
 
+class TestListJobsFilters:
+    def test_filter_by_job_name(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "job_name": "other-job"})
+        results = client.get("/jobs", params={"job_name": "other"}).json()
+        assert len(results) == 1
+        assert results[0]["job_name"] == "other-job"
+
+    def test_filter_by_hostname(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "hostname": "other-host"})
+        results = client.get("/jobs", params={"hostname": "other"}).json()
+        assert len(results) == 1
+        assert results[0]["hostname"] == "other-host"
+
+    def test_filter_by_status_ok(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        results = client.get("/jobs", params={"status": "ok"}).json()
+        assert all(r["succeeded"] for r in results)
+
+    def test_filter_by_status_err(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        results = client.get("/jobs", params={"status": "err"}).json()
+        assert all(not r["succeeded"] for r in results)
+
+    def test_filter_by_command(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "command": "ls -la"})
+        results = client.get("/jobs", params={"command": "ls"}).json()
+        assert len(results) == 1
+        assert results[0]["command"] == "ls -la"
+
+
 class TestDashboard:
     def test_returns_200(self, client: TestClient):
         response = client.get("/")
@@ -104,6 +153,19 @@ class TestDashboard:
     def test_empty_state_message(self, client: TestClient):
         response = client.get("/")
         assert "No job results yet" in response.text
+
+    def test_dashboard_filters_by_job_name(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "job_name": "other-job"})
+        response = client.get("/", params={"job_name": "other"})
+        assert "other-job" in response.text
+        assert "test-job" not in response.text
+
+    def test_dashboard_output_not_in_page(self, client: TestClient):
+        """Dashboard uses exclude_output=True — stdout/stderr not embedded in HTML."""
+        client.post("/jobs", json=JOB_PAYLOAD)
+        response = client.get("/")
+        assert JOB_PAYLOAD["stdout"] not in response.text
 
     def test_renders_job_name(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)

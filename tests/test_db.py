@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from sioncronaich.db import _connect, get_jobs, init_db, insert_job
+from sioncronaich.db import _connect, get_job_by_id, get_jobs, init_db, insert_job
 from sioncronaich.models import JobResultCreate
 
 
@@ -69,6 +69,25 @@ class TestInsertJob:
         assert result.finished_at.tzinfo is not None
 
 
+class TestGetJobById:
+    def test_returns_job_by_id(self, db_path: Path, sample_job: JobResultCreate):
+        inserted = insert_job(sample_job, db_path=db_path)
+        result = get_job_by_id(inserted.id, db_path=db_path)
+        assert result is not None
+        assert result.id == inserted.id
+        assert result.job_name == sample_job.job_name
+
+    def test_returns_none_for_missing_id(self, db_path: Path):
+        assert get_job_by_id(999, db_path=db_path) is None
+
+    def test_includes_stdout_and_stderr(self, db_path: Path, sample_job: JobResultCreate):
+        inserted = insert_job(sample_job, db_path=db_path)
+        result = get_job_by_id(inserted.id, db_path=db_path)
+        assert result is not None
+        assert result.stdout == sample_job.stdout
+        assert result.stderr == sample_job.stderr
+
+
 class TestGetJobs:
     def test_naive_datetime_in_db_gets_utc_applied(
         self, db_path: Path, sample_job: JobResultCreate
@@ -120,3 +139,64 @@ class TestGetJobs:
             insert_job(sample_job, db_path=db_path)
         results = get_jobs(limit=3, offset=3, db_path=db_path)
         assert len(results) == 3
+
+    def test_filter_by_job_name(
+        self, db_path: Path, sample_job: JobResultCreate, failed_job: JobResultCreate
+    ):
+        insert_job(sample_job, db_path=db_path)
+        insert_job(failed_job, db_path=db_path)
+        results = get_jobs(job_name="failing", db_path=db_path)
+        assert len(results) == 1
+        assert results[0].job_name == failed_job.job_name
+
+    def test_filter_by_hostname(self, db_path: Path, sample_job: JobResultCreate):
+        from datetime import UTC, datetime
+
+        from sioncronaich.models import JobResultCreate as JRC
+
+        other = JRC(
+            job_name="x",
+            hostname="other-host",
+            command="x",
+            stdout="",
+            stderr="",
+            exit_code=0,
+            started_at=datetime(2024, 1, 1, tzinfo=UTC),
+            finished_at=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+        insert_job(sample_job, db_path=db_path)
+        insert_job(other, db_path=db_path)
+        results = get_jobs(hostname="other", db_path=db_path)
+        assert len(results) == 1
+        assert results[0].hostname == "other-host"
+
+    def test_filter_by_status_ok(
+        self, db_path: Path, sample_job: JobResultCreate, failed_job: JobResultCreate
+    ):
+        insert_job(sample_job, db_path=db_path)
+        insert_job(failed_job, db_path=db_path)
+        results = get_jobs(status="ok", db_path=db_path)
+        assert all(r.exit_code == 0 for r in results)
+
+    def test_filter_by_status_err(
+        self, db_path: Path, sample_job: JobResultCreate, failed_job: JobResultCreate
+    ):
+        insert_job(sample_job, db_path=db_path)
+        insert_job(failed_job, db_path=db_path)
+        results = get_jobs(status="err", db_path=db_path)
+        assert all(r.exit_code != 0 for r in results)
+
+    def test_filter_by_command(
+        self, db_path: Path, sample_job: JobResultCreate, failed_job: JobResultCreate
+    ):
+        insert_job(sample_job, db_path=db_path)
+        insert_job(failed_job, db_path=db_path)
+        results = get_jobs(command="echo", db_path=db_path)
+        assert len(results) == 1
+        assert results[0].command == sample_job.command
+
+    def test_exclude_output(self, db_path: Path, sample_job: JobResultCreate):
+        insert_job(sample_job, db_path=db_path)
+        results = get_jobs(exclude_output=True, db_path=db_path)
+        assert results[0].stdout == ""
+        assert results[0].stderr == ""

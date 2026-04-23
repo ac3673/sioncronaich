@@ -7,13 +7,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
 from sioncronaich.config import configure_logging, db_path, root_path
-from sioncronaich.db import get_jobs, init_db, insert_job
+from sioncronaich.db import get_job_by_id, get_jobs, init_db, insert_job
 from sioncronaich.models import JobResult, JobResultCreate
 
 logger = logging.getLogger(__name__)
@@ -54,9 +54,33 @@ def create_job(job: JobResultCreate) -> JobResult:
 
 
 @app.get("/jobs", response_model=list[JobResult])
-def list_jobs(limit: int = 200, offset: int = 0) -> list[JobResult]:
+def list_jobs(
+    limit: int = 200,
+    offset: int = 0,
+    job_name: str | None = None,
+    hostname: str | None = None,
+    status: str | None = None,
+    command: str | None = None,
+) -> list[JobResult]:
     """Return job results as JSON (newest first)."""
-    return get_jobs(limit=limit, offset=offset, db_path=db_path())
+    return get_jobs(
+        limit=limit,
+        offset=offset,
+        job_name=job_name,
+        hostname=hostname,
+        status=status,
+        command=command,
+        db_path=db_path(),
+    )
+
+
+@app.get("/jobs/{job_id}/output")
+def job_output(job_id: int) -> JSONResponse:
+    """Return stdout and stderr for a single job — fetched lazily by the dashboard."""
+    job = get_job_by_id(job_id, db_path=db_path())
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JSONResponse({"stdout": job.stdout, "stderr": job.stderr})
 
 
 # ---------------------------------------------------------------------------
@@ -65,9 +89,26 @@ def list_jobs(limit: int = 200, offset: int = 0) -> list[JobResult]:
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, limit: int = 200, offset: int = 0) -> Response:
+def dashboard(
+    request: Request,
+    limit: int = 200,
+    offset: int = 0,
+    job_name: str | None = None,
+    hostname: str | None = None,
+    status: str | None = None,
+    command: str | None = None,
+) -> Response:
     """Render an HTML table of recent job results."""
-    jobs = get_jobs(limit=limit, offset=offset, db_path=db_path())
+    jobs = get_jobs(
+        limit=limit,
+        offset=offset,
+        job_name=job_name,
+        hostname=hostname,
+        status=status,
+        command=command,
+        exclude_output=True,
+        db_path=db_path(),
+    )
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -75,6 +116,10 @@ def dashboard(request: Request, limit: int = 200, offset: int = 0) -> Response:
             "jobs": jobs,
             "limit": limit,
             "offset": offset,
+            "job_name": job_name or "",
+            "hostname": hostname or "",
+            "status": status or "",
+            "command": command or "",
         },
     )
 
