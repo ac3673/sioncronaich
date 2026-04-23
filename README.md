@@ -5,6 +5,11 @@
 
 <p align="center"><strong>sioncronaich</strong> <em>- A lightweight cron-job monitoring tool written in Python - from Gaelic "to synchronise, to chronicle"</em></p>
 
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3130/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![pre-commit](https://img.shields.io/badge/pre--commit-prek-blue?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![Coverage](img/coverage-badge.svg)](https://github.com/ac3673/snekquiz)
+
 
 `sioncronaich` wraps any shell command, captures its **stdout**, **stderr** and **exit code**,
 then POSTs the result to the sioncronaich web app, which stores everything in a local SQLite
