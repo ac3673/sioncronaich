@@ -182,10 +182,9 @@ td {
 
 .cmd {
   color: #e2e8f0;
-  max-width: 28ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 40ch;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .dur {
