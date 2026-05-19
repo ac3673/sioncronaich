@@ -64,18 +64,26 @@
             <td class="dur">{{ "%.3f"|format(job.duration_seconds) }}s</td>
             <td class="ts">{{ job.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
             <td>
+              {% if job.stdout and job.stdout|length > 1 %}
               <details>
                 <summary hx-get="{{ request.url_for('job_output_field', job_id=job.id, field='stdout') }}"
                   hx-trigger="click once" hx-target="next pre" hx-swap="innerHTML">show stdout</summary>
                 <pre></pre>
               </details>
+              {% else %}
+              <span class="none">none</span>
+              {% endif %}
             </td>
             <td>
+              {% if job.stderr and job.stderr|length > 1 %}
               <details>
                 <summary hx-get="{{ request.url_for('job_output_field', job_id=job.id, field='stderr') }}"
                   hx-trigger="click once" hx-target="next pre" hx-swap="innerHTML">show stderr</summary>
                 <pre></pre>
               </details>
+              {% else %}
+              <span class="none">none</span>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
