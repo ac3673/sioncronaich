@@ -1,10 +1,13 @@
 """Tests for the FastAPI web application."""
 
+import asyncio
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-from sioncronaich.db import get_jobs
+from sioncronaich.app import _cleanup_loop
+from sioncronaich.db import cleanup_old_jobs, get_jobs
 
 JOB_PAYLOAD = {
     "job_name": "test-job",
@@ -186,3 +189,199 @@ class TestDashboard:
         client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
         response = client.get("/")
         assert "badge-err" in response.text
+
+
+class TestJobOutputField:
+    """Tests for GET /jobs/{job_id}/output/{field} (lines 128-133)."""
+
+    def test_invalid_field_returns_400(self, client: TestClient):
+        response = client.get("/jobs/1/output/invalid")
+        assert response.status_code == 400
+
+    def test_invalid_field_error_detail(self, client: TestClient):
+        response = client.get("/jobs/1/output/invalid")
+        assert response.json()["detail"] == "field must be stdout or stderr"
+
+    def test_missing_job_returns_404(self, client: TestClient):
+        response = client.get("/jobs/999/output/stdout")
+        assert response.status_code == 404
+
+    def test_returns_stdout_as_html_fragment(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        response = client.get("/jobs/1/output/stdout")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "hello" in response.text
+
+    def test_returns_stderr_as_html_fragment(self, client: TestClient):
+        client.post("/jobs", json={**JOB_PAYLOAD, "stderr": "an error\n"})
+        response = client.get("/jobs/1/output/stderr")
+        assert response.status_code == 200
+        assert "an error" in response.text
+
+    def test_html_escapes_output(self, client: TestClient):
+        client.post("/jobs", json={**JOB_PAYLOAD, "stdout": "<script>alert('xss')</script>"})
+        response = client.get("/jobs/1/output/stdout")
+        assert "<script>" not in response.text
+        assert "&lt;script&gt;" in response.text
+
+    def test_empty_output_returns_placeholder(self, client: TestClient):
+        client.post("/jobs", json={**JOB_PAYLOAD, "stdout": ""})
+        response = client.get("/jobs/1/output/stdout")
+        assert response.status_code == 200
+        assert "(empty)" in response.text
+
+
+class TestTablePartial:
+    """Tests for GET /table (lines 152-162)."""
+
+    def test_returns_200(self, client: TestClient):
+        response = client.get("/table")
+        assert response.status_code == 200
+
+    def test_returns_html(self, client: TestClient):
+        response = client.get("/table")
+        assert "text/html" in response.headers["content-type"]
+
+    def test_empty_state_message(self, client: TestClient):
+        response = client.get("/table")
+        assert "No job results yet" in response.text
+
+    def test_renders_job_name(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        response = client.get("/table")
+        assert "test-job" in response.text
+
+    def test_output_not_embedded_in_partial(self, client: TestClient):
+        """table_partial uses exclude_output=True — stdout/stderr not in HTML."""
+        client.post("/jobs", json=JOB_PAYLOAD)
+        response = client.get("/table")
+        assert JOB_PAYLOAD["stdout"] not in response.text
+
+    def test_filter_by_job_name(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "job_name": "other-job"})
+        response = client.get("/table", params={"job_name": "other"})
+        assert "other-job" in response.text
+        assert "test-job" not in response.text
+
+    def test_filter_by_hostname(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "hostname": "other-host"})
+        response = client.get("/table", params={"hostname": "other"})
+        assert "other-host" in response.text
+        assert "test-host" not in response.text
+
+    def test_filter_by_status_ok(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        response = client.get("/table", params={"status": "ok"})
+        assert "badge-ok" in response.text
+        assert "badge-err" not in response.text
+
+    def test_filter_by_status_err(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        response = client.get("/table", params={"status": "err"})
+        assert "badge-err" in response.text
+        assert "badge-ok" not in response.text
+
+    def test_filter_by_command(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        client.post("/jobs", json={**JOB_PAYLOAD, "command": "ls -la"})
+        response = client.get("/table", params={"command": "ls"})
+        assert "ls -la" in response.text
+        assert "echo hello" not in response.text
+
+    def test_pagination_limit_and_offset(self, client: TestClient):
+        for _ in range(3):
+            client.post("/jobs", json=JOB_PAYLOAD)
+        response = client.get("/table", params={"limit": 2, "offset": 2})
+        assert response.status_code == 200
+
+
+class TestCleanupLoop:
+    """Tests for _cleanup_loop background task (lines 42-43, 48-52)."""
+
+    async def test_startup_cleanup_exception_is_swallowed(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Lines 42-43: RuntimeError during startup cleanup is caught and logged."""
+        monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
+
+        def boom(*_args: object, **_kwargs: object) -> int:
+            raise RuntimeError("db exploded")
+
+        monkeypatch.setattr("sioncronaich.app.cleanup_old_jobs", boom)
+
+        async def instant_cancel(_seconds: float) -> None:
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr("sioncronaich.app.asyncio.sleep", instant_cancel)
+
+        # CancelledError escapes from asyncio.sleep — startup exception was swallowed
+        with pytest.raises(asyncio.CancelledError):
+            await _cleanup_loop()
+
+    async def test_loop_body_runs_cleanup_after_sleep(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Lines 49-50: cleanup_old_jobs is called after asyncio.sleep returns."""
+        monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
+
+        sleep_calls = 0
+
+        async def sleep_once_then_cancel(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls > 1:
+                raise asyncio.CancelledError
+
+        monkeypatch.setattr("sioncronaich.app.asyncio.sleep", sleep_once_then_cancel)
+
+        call_log: list[int] = []
+        original = cleanup_old_jobs
+
+        def tracking_cleanup(*args: object, **kwargs: object) -> int:
+            result = original(*args, **kwargs)  # type: ignore[arg-type]
+            call_log.append(result)
+            return result
+
+        monkeypatch.setattr("sioncronaich.app.cleanup_old_jobs", tracking_cleanup)
+
+        with pytest.raises(asyncio.CancelledError):
+            await _cleanup_loop()
+
+        # 1 startup call + 1 loop-body call before the second sleep cancels
+        assert len(call_log) == 2
+
+    async def test_loop_body_exception_is_swallowed(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Lines 51-52: exception inside the while-loop try is caught and logged."""
+        monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
+
+        sleep_calls = 0
+
+        async def sleep_once_then_cancel(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls > 1:
+                raise asyncio.CancelledError
+
+        monkeypatch.setattr("sioncronaich.app.asyncio.sleep", sleep_once_then_cancel)
+
+        cleanup_calls = 0
+
+        def boom_on_second(*_args: object, **_kwargs: object) -> int:
+            nonlocal cleanup_calls
+            cleanup_calls += 1
+            if cleanup_calls > 1:
+                raise RuntimeError("nightly cleanup failed")
+            return 0
+
+        monkeypatch.setattr("sioncronaich.app.cleanup_old_jobs", boom_on_second)
+
+        # loop-body exception is swallowed; CancelledError comes from 2nd sleep
+        with pytest.raises(asyncio.CancelledError):
+            await _cleanup_loop()
