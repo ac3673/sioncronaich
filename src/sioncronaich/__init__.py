@@ -1,3 +1,3 @@
 """sioncronaich — cron job output capture and monitoring."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
