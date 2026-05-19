@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import html
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -15,7 +18,13 @@ from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
 from sioncronaich.config import configure_logging, db_path, root_path
-from sioncronaich.db import get_job_by_id, get_jobs, init_db, insert_job
+from sioncronaich.db import (
+    cleanup_old_jobs,
+    get_job_by_id,
+    get_jobs,
+    init_db,
+    insert_job,
+)
 from sioncronaich.models import JobResult, JobResultCreate
 
 logger = logging.getLogger(__name__)
@@ -24,13 +33,39 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
+async def _cleanup_loop() -> None:
+    """Background task: wait until the next UTC midnight, then run
+    :func:`~sioncronaich.db.cleanup_old_failed_jobs` once per day."""
+    try:
+        deleted = cleanup_old_jobs(db_path=db_path())
+        logger.info(f"Startup cleanup: removed {deleted} failed job(s) older than 7 days")
+    except Exception:
+        logger.exception("Failed to clean up old jobs in db")
+    while True:
+        now = datetime.now(UTC)
+        next_midnight = datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=UTC)
+        await asyncio.sleep((next_midnight - now).total_seconds())
+        try:
+            deleted = cleanup_old_jobs(db_path=db_path())
+            logger.info(f"Midnight cleanup: removed {deleted} failed job(s) older than 7 days")
+        except Exception:
+            logger.exception("Midnight cleanup encountered an error")
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Configure logging and ensure the database schema exists when the server starts."""
+    """Configure logging, ensure the database schema exists, and start the
+    nightly cleanup background task when the server starts."""
     configure_logging()
     resolved = init_db(db_path())
     logger.info("Database ready at %s", resolved)
-    yield
+    cleanup_task = asyncio.create_task(_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cleanup_task
 
 
 app = FastAPI(
@@ -157,7 +192,7 @@ def dashboard(
         hostname=hostname,
         status=status,
         command=command,
-        exclude_output=True,
+        exclude_output=False,
         db_path=db_path(),
     )
     return templates.TemplateResponse(

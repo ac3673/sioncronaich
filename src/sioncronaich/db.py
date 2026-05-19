@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sioncronaich.models import JobResult, JobResultCreate
@@ -128,8 +128,26 @@ def get_job_by_id(job_id: int, *, db_path: Path | None = None) -> JobResult | No
     )
 
 
+def cleanup_old_jobs(db_path: Path | None = None) -> int:
+    """Delete old job results
+
+    Returns the number of rows deleted.
+    """
+    resolved = db_path or _default_db_path()
+    failed_jobs_cutoff = datetime.now(UTC) - timedelta(days=30)
+    successful_jobs_cutoff = datetime.now(UTC) - timedelta(days=7)
+    with _connect(resolved) as conn:
+        cursor = conn.execute(
+            "DELETE FROM job_results WHERE (exit_code = 0 AND finished_at < :successful_jobs_cutoff) OR (exit_code != 0 and finished_at < :failed_jobs_cutoff)",
+            {
+                "successful_jobs_cutoff": successful_jobs_cutoff.isoformat(),
+                "failed_jobs_cutoff": failed_jobs_cutoff.isoformat(),
+            },
+        )
+    return cursor.rowcount
+
+
 def get_jobs(
-    *,
     limit: int = 200,
     offset: int = 0,
     job_name: str | None = None,
