@@ -211,6 +211,8 @@ def get_jobs(
             command=row["command"],
             stdout="" if exclude_output else row["stdout"],
             stderr="" if exclude_output else row["stderr"],
+            has_stdout=len(row["stdout"]) > 1,
+            has_stderr=len(row["stderr"]) > 1,
             exit_code=row["exit_code"],
             started_at=_parse_dt(row["started_at"]),
             finished_at=_parse_dt(row["finished_at"]),

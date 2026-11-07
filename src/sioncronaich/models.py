@@ -27,6 +27,8 @@ class JobResult(JobResultCreate):
     """A job result as stored in (and returned from) the database."""
 
     id: int
+    has_stdout: bool = False
+    has_stderr: bool = False
 
     @computed_field  # type: ignore[misc]
     @property
