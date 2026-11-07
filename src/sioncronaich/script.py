@@ -110,11 +110,21 @@ def _post_result(endpoint: str, payload: JobResultCreate, timeout: int) -> None:
     show_default=True,
     help="HTTP request timeout in seconds when posting the result.",
 )
+@click.option(
+    "--failures-only",
+    is_flag=True,
+    default=lambda: os.environ.get("SIONCRONAICH_FAILURES_ONLY", "").lower() in ("1", "true", "yes"),
+    help=(
+        "Only report the job if it exits with a non-zero code. "
+        "Overrides SIONCRONAICH_FAILURES_ONLY env var."
+    ),
+)
 @click.argument("command", nargs=-1, type=click.UNPROCESSED, required=True)
 def main(
     name: str | None,
     endpoint: str,
     timeout: int,
+    failures_only: bool,
     command: tuple[str, ...],
 ) -> None:
     if name is None:
@@ -125,6 +135,9 @@ def main(
         )
 
     stdout, stderr, exit_code, started_at, finished_at = _run_command(command)
+
+    if failures_only and exit_code == 0:
+        sys.exit(0)
 
     payload = JobResultCreate(
         job_name=name,

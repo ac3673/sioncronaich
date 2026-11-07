@@ -16,6 +16,17 @@ def db_path() -> Path | None:
     return Path(raw) if raw else None
 
 
+def failures_only() -> bool:
+    """Return ``True`` when ``SIONCRONAICH_FAILURES_ONLY`` is set to a truthy
+    value (``1``, ``true``, or ``yes``, case-insensitive).
+
+    When enabled, the server discards successful job results without persisting
+    them.  Useful when jobs run very frequently and only failures are worth
+    keeping.
+    """
+    return os.environ.get("SIONCRONAICH_FAILURES_ONLY", "").lower() in ("1", "true", "yes")
+
+
 def root_path() -> str:
     """Return the ASGI root path from ``SIONCRONAICH_ROOT_PATH``.
 

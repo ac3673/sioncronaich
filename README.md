@@ -5,7 +5,7 @@
 
 <p align="center"><strong>sioncronaich</strong> <em>- A lightweight cron-job monitoring tool written in Python - from Gaelic "to synchronise, to chronicle"</em></p>
 
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3130/)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3140/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![pre-commit](https://img.shields.io/badge/pre--commit-prek-blue?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![Coverage](https://raw.githubusercontent.com/ac3673/sioncronaich/refs/heads/main/img/coverage-badge.svg)](https://github.com/ac3673/sioncronaich)
@@ -34,6 +34,7 @@ The app reads the following environment variables:
 |---|---|---|
 | `SIONCRONAICH_DB` | `~/.local/share/sioncronaich/jobs.db` | SQLite database path |
 | `SIONCRONAICH_ROOT_PATH` | `/sioncronaich` | ASGI root path when mounted behind a reverse proxy |
+| `SIONCRONAICH_FAILURES_ONLY` | *(unset)* | Set to `1`, `true`, or `yes` to discard successful job results without storing them |
 | `LOG_CONFIG` | *(unset — logs to stderr at INFO)* | Path to a YAML logging config file |
 
 ### 2 — Wrap a command
@@ -50,10 +51,11 @@ error is printed to stderr but the exit code is still that of the wrapped job.
 Usage: sioncronaich [OPTIONS] COMMAND...
 
 Options:
-  --name TEXT      Human-readable label for this job  [required]
-  --endpoint TEXT  URL of the POST /jobs endpoint
-                   [default: http://127.0.0.1:8716/jobs]
-    --timeout INT    HTTP request timeout in seconds  [default: 10]
+  --name TEXT       Human-readable label for this job  [required]
+  --endpoint TEXT   URL of the POST /jobs endpoint
+                    [default: http://127.0.0.1:8716/jobs]
+  --timeout INT     HTTP request timeout in seconds  [default: 10]
+  --failures-only   Only report the job if it exits with a non-zero code
 ```
 
 The endpoint can also be set via the `SIONCRONAICH_ENDPOINT` environment
@@ -63,6 +65,11 @@ variable so you don't have to repeat it in every crontab entry. The
 ```bash
 export SIONCRONAICH_ENDPOINT=http://mon.example.com/sioncronaich/jobs
 ```
+
+`--failures-only` is useful for jobs that run very frequently where only
+failures are worth keeping. It can also be enabled globally on the server
+via `SIONCRONAICH_FAILURES_ONLY=1`, which will discard successful results
+regardless of how the script was invoked.
 
 ### 3 — Add to crontab
 

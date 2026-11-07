@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Adam Cuthbert", email = "54388772+ac3673@users.noreply.github.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2",
     "requests>=2.32",
@@ -46,7 +46,7 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 96
 fix = true
-target-version = "py312"
+target-version = "py314"
 output-format = "concise"
 
 [tool.ruff.lint]

@@ -62,3 +62,19 @@ class TestJobResult:
     def test_id_present(self):
         job = JobResult(id=42, **make_job().model_dump())
         assert job.id == 42
+
+    def test_has_stdout_true_when_stdout_present(self):
+        job = JobResult(id=1, has_stdout=True, **make_job(stdout="hello\n").model_dump())
+        assert job.has_stdout is True
+
+    def test_has_stdout_false_by_default(self):
+        job = JobResult(id=1, **make_job(stdout="hello\n").model_dump())
+        assert job.has_stdout is False
+
+    def test_has_stderr_true_when_stderr_present(self):
+        job = JobResult(id=1, has_stderr=True, **make_job(stderr="err\n").model_dump())
+        assert job.has_stderr is True
+
+    def test_has_stderr_false_by_default(self):
+        job = JobResult(id=1, **make_job(stderr="err\n").model_dump())
+        assert job.has_stderr is False

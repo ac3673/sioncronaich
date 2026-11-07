@@ -20,6 +20,14 @@ JOB_PAYLOAD = {
     "finished_at": "2024-01-01T12:00:05+00:00",
 }
 
+FAILED_PAYLOAD = {
+    **JOB_PAYLOAD,
+    "job_name": "failing-job",
+    "stdout": "",
+    "stderr": "error: something went wrong\n",
+    "exit_code": 1,
+}
+
 
 class TestPostJob:
     def test_returns_201(self, client: TestClient):
@@ -27,66 +35,85 @@ class TestPostJob:
         assert response.status_code == 201
 
     def test_response_contains_id(self, client: TestClient):
-        response = client.post("/jobs", json=JOB_PAYLOAD)
-        assert "id" in response.json()
+        assert "id" in client.post("/jobs", json=JOB_PAYLOAD).json()
 
     def test_response_fields_match_payload(self, client: TestClient):
-        response = client.post("/jobs", json=JOB_PAYLOAD)
-        data = response.json()
+        data = client.post("/jobs", json=JOB_PAYLOAD).json()
         assert data["job_name"] == JOB_PAYLOAD["job_name"]
         assert data["hostname"] == JOB_PAYLOAD["hostname"]
         assert data["command"] == JOB_PAYLOAD["command"]
         assert data["exit_code"] == JOB_PAYLOAD["exit_code"]
 
     def test_response_contains_computed_fields(self, client: TestClient):
-        response = client.post("/jobs", json=JOB_PAYLOAD)
-        data = response.json()
-        assert "duration_seconds" in data
-        assert "succeeded" in data
+        data = client.post("/jobs", json=JOB_PAYLOAD).json()
         assert data["duration_seconds"] == 5.0
         assert data["succeeded"] is True
 
     def test_persists_to_database(self, client: TestClient, db_path: Path):
         client.post("/jobs", json=JOB_PAYLOAD)
-        jobs = get_jobs(db_path=db_path)
-        assert len(jobs) == 1
+        assert len(get_jobs(db_path=db_path)) == 1
 
     def test_invalid_payload_returns_422(self, client: TestClient):
-        response = client.post("/jobs", json={"job_name": "incomplete"})
-        assert response.status_code == 422
+        assert client.post("/jobs", json={"job_name": "incomplete"}).status_code == 422
 
-    def test_failed_job(self, client: TestClient):
-        payload = {**JOB_PAYLOAD, "exit_code": 1, "stderr": "error\n"}
-        response = client.post("/jobs", json=payload)
-        data = response.json()
+    def test_failed_job_response(self, client: TestClient):
+        data = client.post("/jobs", json=FAILED_PAYLOAD).json()
         assert data["succeeded"] is False
         assert data["exit_code"] == 1
+
+
+class TestPostJobFailuresOnly:
+    """POST /jobs behaviour when SIONCRONAICH_FAILURES_ONLY is set."""
+
+    def test_successful_job_returns_204(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+        assert client.post("/jobs", json=JOB_PAYLOAD).status_code == 204
+
+    def test_successful_job_not_persisted(
+        self, client: TestClient, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert get_jobs(db_path=db_path) == []
+
+    def test_failed_job_still_returns_201(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+        assert client.post("/jobs", json=FAILED_PAYLOAD).status_code == 201
+
+    def test_failed_job_still_persisted(
+        self, client: TestClient, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+        client.post("/jobs", json=FAILED_PAYLOAD)
+        assert len(get_jobs(db_path=db_path)) == 1
+
+    def test_disabled_by_default(self, client: TestClient, db_path: Path):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert len(get_jobs(db_path=db_path)) == 1
 
 
 class TestJobOutput:
     def test_returns_stdout_and_stderr(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/jobs/1/output")
-        assert response.status_code == 200
-        data = response.json()
+        data = client.get("/jobs/1/output").json()
         assert data["stdout"] == JOB_PAYLOAD["stdout"]
         assert data["stderr"] == JOB_PAYLOAD["stderr"]
 
     def test_returns_404_for_missing_job(self, client: TestClient):
-        response = client.get("/jobs/999/output")
-        assert response.status_code == 404
+        assert client.get("/jobs/999/output").status_code == 404
 
 
 class TestListJobs:
     def test_empty_returns_empty_list(self, client: TestClient):
-        response = client.get("/jobs")
-        assert response.status_code == 200
-        assert response.json() == []
+        assert client.get("/jobs").json() == []
 
     def test_returns_posted_jobs(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/jobs")
-        assert len(response.json()) == 1
+        assert len(client.get("/jobs").json()) == 1
 
     def test_newest_first_ordering(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
@@ -98,8 +125,7 @@ class TestListJobs:
     def test_limit_query_param(self, client: TestClient):
         for _ in range(5):
             client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/jobs", params={"limit": 3})
-        assert len(response.json()) == 3
+        assert len(client.get("/jobs", params={"limit": 3}).json()) == 3
 
     def test_offset_query_param(self, client: TestClient):
         for _ in range(5):
@@ -108,8 +134,6 @@ class TestListJobs:
         offset_results = client.get("/jobs", params={"offset": 2}).json()
         assert offset_results[0]["id"] == all_results[2]["id"]
 
-
-class TestListJobsFilters:
     def test_filter_by_job_name(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
         client.post("/jobs", json={**JOB_PAYLOAD, "job_name": "other-job"})
@@ -126,13 +150,13 @@ class TestListJobsFilters:
 
     def test_filter_by_status_ok(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
-        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        client.post("/jobs", json=FAILED_PAYLOAD)
         results = client.get("/jobs", params={"status": "ok"}).json()
         assert all(r["succeeded"] for r in results)
 
     def test_filter_by_status_err(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
-        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        client.post("/jobs", json=FAILED_PAYLOAD)
         results = client.get("/jobs", params={"status": "err"}).json()
         assert all(not r["succeeded"] for r in results)
 
@@ -146,65 +170,64 @@ class TestListJobsFilters:
 
 class TestDashboard:
     def test_returns_200(self, client: TestClient):
-        response = client.get("/")
-        assert response.status_code == 200
+        assert client.get("/").status_code == 200
 
     def test_returns_html(self, client: TestClient):
-        response = client.get("/")
-        assert "text/html" in response.headers["content-type"]
+        assert "text/html" in client.get("/").headers["content-type"]
 
     def test_empty_state_message(self, client: TestClient):
-        response = client.get("/")
-        assert "No job results yet" in response.text
+        assert "No job results yet" in client.get("/").text
 
-    def test_dashboard_filters_by_job_name(self, client: TestClient):
+    def test_renders_job_name(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert "test-job" in client.get("/").text
+
+    def test_renders_hostname(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert "test-host" in client.get("/").text
+
+    def test_ok_badge_for_success(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert "badge-ok" in client.get("/").text
+
+    def test_err_badge_for_failure(self, client: TestClient):
+        client.post("/jobs", json=FAILED_PAYLOAD)
+        assert "badge-err" in client.get("/").text
+
+    def test_output_not_embedded_in_page(self, client: TestClient):
+        """Dashboard uses exclude_output=True — stdout content not in HTML."""
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert JOB_PAYLOAD["stdout"] not in client.get("/").text
+
+    def test_show_stdout_link_present_when_has_stdout(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert "show stdout" in client.get("/").text
+
+    def test_show_stderr_link_present_when_has_stderr(self, client: TestClient):
+        client.post("/jobs", json=FAILED_PAYLOAD)
+        assert "show stderr" in client.get("/").text
+
+    def test_no_show_stdout_link_when_stdout_empty(self, client: TestClient):
+        client.post("/jobs", json=FAILED_PAYLOAD)
+        assert "show stdout" not in client.get("/").text
+
+    def test_filter_by_job_name(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
         client.post("/jobs", json={**JOB_PAYLOAD, "job_name": "other-job"})
         response = client.get("/", params={"job_name": "other"})
         assert "other-job" in response.text
         assert "test-job" not in response.text
 
-    def test_dashboard_output_not_in_page(self, client: TestClient):
-        """Dashboard uses exclude_output=True — stdout/stderr not embedded in HTML."""
-        client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/")
-        assert JOB_PAYLOAD["stdout"] not in response.text
-
-    def test_renders_job_name(self, client: TestClient):
-        client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/")
-        assert "test-job" in response.text
-
-    def test_renders_hostname(self, client: TestClient):
-        client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/")
-        assert "test-host" in response.text
-
-    def test_ok_badge_for_success(self, client: TestClient):
-        client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/")
-        assert "badge-ok" in response.text
-
-    def test_err_badge_for_failure(self, client: TestClient):
-        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
-        response = client.get("/")
-        assert "badge-err" in response.text
-
 
 class TestJobOutputField:
-    """Tests for GET /jobs/{job_id}/output/{field} (lines 128-133)."""
-
     def test_invalid_field_returns_400(self, client: TestClient):
-        response = client.get("/jobs/1/output/invalid")
-        assert response.status_code == 400
+        assert client.get("/jobs/1/output/invalid").status_code == 400
 
     def test_invalid_field_error_detail(self, client: TestClient):
-        response = client.get("/jobs/1/output/invalid")
-        assert response.json()["detail"] == "field must be stdout or stderr"
+        assert client.get("/jobs/1/output/invalid").json()["detail"] == "field must be stdout or stderr"
 
     def test_missing_job_returns_404(self, client: TestClient):
-        response = client.get("/jobs/999/output/stdout")
-        assert response.status_code == 404
+        assert client.get("/jobs/999/output/stdout").status_code == 404
 
     def test_returns_stdout_as_html_fragment(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
@@ -233,30 +256,34 @@ class TestJobOutputField:
 
 
 class TestTablePartial:
-    """Tests for GET /table (lines 152-162)."""
-
     def test_returns_200(self, client: TestClient):
-        response = client.get("/table")
-        assert response.status_code == 200
+        assert client.get("/table").status_code == 200
 
     def test_returns_html(self, client: TestClient):
-        response = client.get("/table")
-        assert "text/html" in response.headers["content-type"]
+        assert "text/html" in client.get("/table").headers["content-type"]
 
     def test_empty_state_message(self, client: TestClient):
-        response = client.get("/table")
-        assert "No job results yet" in response.text
+        assert "No job results yet" in client.get("/table").text
 
     def test_renders_job_name(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/table")
-        assert "test-job" in response.text
+        assert "test-job" in client.get("/table").text
 
     def test_output_not_embedded_in_partial(self, client: TestClient):
-        """table_partial uses exclude_output=True — stdout/stderr not in HTML."""
         client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/table")
-        assert JOB_PAYLOAD["stdout"] not in response.text
+        assert JOB_PAYLOAD["stdout"] not in client.get("/table").text
+
+    def test_show_stdout_link_present_when_has_stdout(self, client: TestClient):
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert "show stdout" in client.get("/table").text
+
+    def test_show_stderr_link_present_when_has_stderr(self, client: TestClient):
+        client.post("/jobs", json=FAILED_PAYLOAD)
+        assert "show stderr" in client.get("/table").text
+
+    def test_no_show_stdout_link_when_stdout_empty(self, client: TestClient):
+        client.post("/jobs", json=FAILED_PAYLOAD)
+        assert "show stdout" not in client.get("/table").text
 
     def test_filter_by_job_name(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
@@ -274,14 +301,14 @@ class TestTablePartial:
 
     def test_filter_by_status_ok(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
-        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        client.post("/jobs", json=FAILED_PAYLOAD)
         response = client.get("/table", params={"status": "ok"})
         assert "badge-ok" in response.text
         assert "badge-err" not in response.text
 
     def test_filter_by_status_err(self, client: TestClient):
         client.post("/jobs", json=JOB_PAYLOAD)
-        client.post("/jobs", json={**JOB_PAYLOAD, "exit_code": 1})
+        client.post("/jobs", json=FAILED_PAYLOAD)
         response = client.get("/table", params={"status": "err"})
         assert "badge-err" in response.text
         assert "badge-ok" not in response.text
@@ -296,17 +323,13 @@ class TestTablePartial:
     def test_pagination_limit_and_offset(self, client: TestClient):
         for _ in range(3):
             client.post("/jobs", json=JOB_PAYLOAD)
-        response = client.get("/table", params={"limit": 2, "offset": 2})
-        assert response.status_code == 200
+        assert client.get("/table", params={"limit": 2, "offset": 2}).status_code == 200
 
 
 class TestCleanupLoop:
-    """Tests for _cleanup_loop background task (lines 42-43, 48-52)."""
-
     async def test_startup_cleanup_exception_is_swallowed(
         self, db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Lines 42-43: RuntimeError during startup cleanup is caught and logged."""
         monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
 
         def boom(*_args: object, **_kwargs: object) -> int:
@@ -319,14 +342,12 @@ class TestCleanupLoop:
 
         monkeypatch.setattr("sioncronaich.app.asyncio.sleep", instant_cancel)
 
-        # CancelledError escapes from asyncio.sleep — startup exception was swallowed
         with pytest.raises(asyncio.CancelledError):
             await _cleanup_loop()
 
     async def test_loop_body_runs_cleanup_after_sleep(
         self, db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Lines 49-50: cleanup_old_jobs is called after asyncio.sleep returns."""
         monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
 
         sleep_calls = 0
@@ -352,13 +373,11 @@ class TestCleanupLoop:
         with pytest.raises(asyncio.CancelledError):
             await _cleanup_loop()
 
-        # 1 startup call + 1 loop-body call before the second sleep cancels
         assert len(call_log) == 2
 
     async def test_loop_body_exception_is_swallowed(
         self, db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Lines 51-52: exception inside the while-loop try is caught and logged."""
         monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
 
         sleep_calls = 0
@@ -382,6 +401,5 @@ class TestCleanupLoop:
 
         monkeypatch.setattr("sioncronaich.app.cleanup_old_jobs", boom_on_second)
 
-        # loop-body exception is swallowed; CancelledError comes from 2nd sleep
         with pytest.raises(asyncio.CancelledError):
             await _cleanup_loop()

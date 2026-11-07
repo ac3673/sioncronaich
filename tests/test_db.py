@@ -1,5 +1,6 @@
 """Tests for the SQLite persistence layer."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,10 +13,8 @@ class TestInitDb:
     def test_uses_default_path_when_none_given(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ):
-        """Calling init_db() with no argument must not raise and must return a Path."""
-        # Redirect home so we don't pollute the real user directory during tests.
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         result = init_db()
         assert isinstance(result, Path)
         assert result.exists()
@@ -34,7 +33,7 @@ class TestInitDb:
     def test_idempotent(self, tmp_path: Path):
         path = tmp_path / "jobs.db"
         init_db(path)
-        init_db(path)  # should not raise
+        init_db(path)
 
 
 class TestInsertJob:
@@ -92,9 +91,7 @@ class TestGetJobs:
     def test_naive_datetime_in_db_gets_utc_applied(
         self, db_path: Path, sample_job: JobResultCreate
     ):
-        """Rows written without a timezone offset are treated as UTC on read-back."""
         insert_job(sample_job, db_path=db_path)
-        # Overwrite started_at with a naive ISO string to simulate legacy data.
         with _connect(db_path) as conn:
             conn.execute(
                 "UPDATE job_results SET started_at = '2024-01-01T12:00:00' WHERE id = 1"
@@ -124,8 +121,7 @@ class TestGetJobs:
     def test_limit(self, db_path: Path, sample_job: JobResultCreate):
         for _ in range(5):
             insert_job(sample_job, db_path=db_path)
-        results = get_jobs(limit=3, db_path=db_path)
-        assert len(results) == 3
+        assert len(get_jobs(limit=3, db_path=db_path)) == 3
 
     def test_offset(self, db_path: Path, sample_job: JobResultCreate):
         for _ in range(5):
@@ -137,8 +133,7 @@ class TestGetJobs:
     def test_limit_and_offset(self, db_path: Path, sample_job: JobResultCreate):
         for _ in range(10):
             insert_job(sample_job, db_path=db_path)
-        results = get_jobs(limit=3, offset=3, db_path=db_path)
-        assert len(results) == 3
+        assert len(get_jobs(limit=3, offset=3, db_path=db_path)) == 3
 
     def test_filter_by_job_name(
         self, db_path: Path, sample_job: JobResultCreate, failed_job: JobResultCreate
@@ -150,11 +145,7 @@ class TestGetJobs:
         assert results[0].job_name == failed_job.job_name
 
     def test_filter_by_hostname(self, db_path: Path, sample_job: JobResultCreate):
-        from datetime import UTC, datetime
-
-        from sioncronaich.models import JobResultCreate as JRC
-
-        other = JRC(
+        other = JobResultCreate(
             job_name="x",
             hostname="other-host",
             command="x",
@@ -195,8 +186,40 @@ class TestGetJobs:
         assert len(results) == 1
         assert results[0].command == sample_job.command
 
-    def test_exclude_output(self, db_path: Path, sample_job: JobResultCreate):
+    def test_exclude_output_blanks_stdout_and_stderr(
+        self, db_path: Path, sample_job: JobResultCreate
+    ):
         insert_job(sample_job, db_path=db_path)
         results = get_jobs(exclude_output=True, db_path=db_path)
         assert results[0].stdout == ""
         assert results[0].stderr == ""
+
+    def test_exclude_output_preserves_has_stdout(
+        self, db_path: Path, sample_job: JobResultCreate
+    ):
+        """has_stdout must reflect the real row even when exclude_output=True."""
+        insert_job(sample_job, db_path=db_path)
+        results = get_jobs(exclude_output=True, db_path=db_path)
+        assert results[0].has_stdout is True
+
+    def test_exclude_output_preserves_has_stderr(
+        self, db_path: Path, failed_job: JobResultCreate
+    ):
+        """has_stderr must reflect the real row even when exclude_output=True."""
+        insert_job(failed_job, db_path=db_path)
+        results = get_jobs(exclude_output=True, db_path=db_path)
+        assert results[0].has_stderr is True
+
+    def test_has_stdout_false_when_stdout_empty(
+        self, db_path: Path, failed_job: JobResultCreate
+    ):
+        insert_job(failed_job, db_path=db_path)
+        results = get_jobs(db_path=db_path)
+        assert results[0].has_stdout is False
+
+    def test_has_stderr_false_when_stderr_empty(
+        self, db_path: Path, sample_job: JobResultCreate
+    ):
+        insert_job(sample_job, db_path=db_path)
+        results = get_jobs(db_path=db_path)
+        assert results[0].has_stderr is False

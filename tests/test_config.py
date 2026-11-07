@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from sioncronaich.config import configure_logging, db_path, root_path
+from sioncronaich.config import configure_logging, db_path, failures_only, root_path
 
 
 class TestDbPath:
@@ -39,10 +39,32 @@ class TestRootPath:
         assert root_path() == ""
 
 
+class TestFailuresOnly:
+    def test_false_when_env_unset(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("SIONCRONAICH_FAILURES_ONLY", raising=False)
+        assert failures_only() is False
+
+    def test_false_when_env_empty(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "")
+        assert failures_only() is False
+
+    def test_false_when_env_is_zero(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "0")
+        assert failures_only() is False
+
+    def test_false_when_env_is_false(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "false")
+        assert failures_only() is False
+
+    @pytest.mark.parametrize("value", ["1", "true", "yes", "TRUE", "YES", "True"])
+    def test_true_for_truthy_values(self, monkeypatch: pytest.MonkeyPatch, value: str):
+        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", value)
+        assert failures_only() is True
+
+
 class TestConfigureLogging:
     def test_falls_back_to_basicconfig_when_env_unset(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("LOG_CONFIG", raising=False)
-        # Should not raise
         configure_logging()
         assert logging.getLogger().level != logging.NOTSET
 
@@ -53,7 +75,6 @@ class TestConfigureLogging:
             encoding="utf-8",
         )
         monkeypatch.setenv("LOG_CONFIG", str(config_file))
-        # Should not raise
         configure_logging()
 
     def test_raises_if_log_config_file_missing(

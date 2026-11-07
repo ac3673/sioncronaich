@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
-from sioncronaich.config import configure_logging, db_path, root_path
+from sioncronaich.config import configure_logging, db_path, failures_only, root_path
 from sioncronaich.db import (
     cleanup_old_jobs,
     get_job_by_id,
@@ -86,10 +86,17 @@ app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 @app.post("/jobs", response_model=JobResult, status_code=201)
-def create_job(job: JobResultCreate) -> JobResult:
-    """Receive and persist a single job result from the sioncronaich script."""
+def create_job(job: JobResultCreate) -> Response:
+    """Receive and persist a single job result from the sioncronaich script.
+
+    When ``SIONCRONAICH_FAILURES_ONLY`` is set, successful jobs are acknowledged
+    with 204 No Content and not stored.
+    """
     logger.info("Received job result: %s (exit_code=%s)", job.job_name, job.exit_code)
-    return insert_job(job, db_path=db_path())
+    if failures_only() and job.exit_code == 0:
+        logger.debug("Discarding successful job %r (failures_only mode)", job.job_name)
+        return Response(status_code=204)
+    return JSONResponse(insert_job(job, db_path=db_path()).model_dump(mode="json"), status_code=201)
 
 
 @app.get("/jobs", response_model=list[JobResult])
