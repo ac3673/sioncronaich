@@ -35,6 +35,14 @@ The app reads the following environment variables:
 | `SIONCRONAICH_DB` | `~/.local/share/sioncronaich/jobs.db` | SQLite database path |
 | `SIONCRONAICH_ROOT_PATH` | `/sioncronaich` | ASGI root path when mounted behind a reverse proxy |
 | `SIONCRONAICH_FAILURES_ONLY` | *(unset)* | Set to `1`, `true`, or `yes` to discard successful job results without storing them |
+| `SIONCRONAICH_ALERT_EMAIL` | *(unset — alerts disabled)* | Send a failure-alert email to this address whenever a job exits non-zero |
+| `SIONCRONAICH_SMTP_HOST` | `localhost` | SMTP server hostname |
+| `SIONCRONAICH_SMTP_PORT` | `25` | SMTP server port |
+| `SIONCRONAICH_SMTP_FROM` | `sioncronaich@<hostname>` | Sender address |
+| `SIONCRONAICH_SMTP_USERNAME` | *(unset)* | SMTP login username |
+| `SIONCRONAICH_SMTP_PASSWORD` | *(unset)* | SMTP login password |
+| `SIONCRONAICH_SMTP_STARTTLS` | *(unset)* | Set to `1`, `true`, or `yes` to issue STARTTLS after connecting |
+| `SIONCRONAICH_SMTP_SSL` | *(unset)* | Set to `1`, `true`, or `yes` to connect with SMTP_SSL (implicit TLS) |
 | `LOG_CONFIG` | *(unset — logs to stderr at INFO)* | Path to a YAML logging config file |
 
 ### 2 — Wrap a command

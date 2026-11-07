@@ -18,6 +18,7 @@ from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
 from sioncronaich.config import configure_logging, db_path, failures_only, root_path
+from sioncronaich.email_alert import send_failure_alert
 from sioncronaich.db import (
     cleanup_old_jobs,
     get_job_by_id,
@@ -96,7 +97,10 @@ def create_job(job: JobResultCreate) -> Response:
     if failures_only() and job.exit_code == 0:
         logger.debug("Discarding successful job %r (failures_only mode)", job.job_name)
         return Response(status_code=204)
-    return JSONResponse(insert_job(job, db_path=db_path()).model_dump(mode="json"), status_code=201)
+    result = insert_job(job, db_path=db_path())
+    if result.exit_code != 0:
+        send_failure_alert(result)
+    return JSONResponse(result.model_dump(mode="json"), status_code=201)
 
 
 @app.get("/jobs", response_model=list[JobResult])
