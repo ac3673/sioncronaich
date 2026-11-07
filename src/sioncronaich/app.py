@@ -34,11 +34,11 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 
 async def _cleanup_loop() -> None:
-    """Background task: wait until the next UTC midnight, then run
-    :func:`~sioncronaich.db.cleanup_old_failed_jobs` once per day."""
+    """Background task: run :func:`~sioncronaich.db.cleanup_old_jobs` once at
+    startup and then once per day at UTC midnight."""
     try:
         deleted = cleanup_old_jobs(db_path=db_path())
-        logger.info(f"Startup cleanup: removed {deleted} failed job(s) older than 7 days")
+        logger.info(f"Startup cleanup: removed {deleted} job(s) (successful >7d, failed >30d)")
     except Exception:
         logger.exception("Failed to clean up old jobs in db")
     while True:
@@ -47,7 +47,7 @@ async def _cleanup_loop() -> None:
         await asyncio.sleep((next_midnight - now).total_seconds())
         try:
             deleted = cleanup_old_jobs(db_path=db_path())
-            logger.info(f"Midnight cleanup: removed {deleted} failed job(s) older than 7 days")
+            logger.info(f"Midnight cleanup: removed {deleted} job(s) (successful >7d, failed >30d)")
         except Exception:
             logger.exception("Midnight cleanup encountered an error")
 
