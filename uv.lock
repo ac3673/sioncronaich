@@ -254,19 +254,6 @@ wheels = [
 ]
 
 [[package]]
-name = "httpcore"
-version = "1.0.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "certifi" },
-    { name = "h11" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/06/94/82699a10bca87a5556c9c59b5963f2d039dbd239f25bc2a63907a05a14cb/httpcore-1.0.9.tar.gz", hash = "sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8", size = 85484, upload-time = "2025-04-24T22:06:22.219Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl", hash = "sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55", size = 78784, upload-time = "2025-04-24T22:06:20.566Z" },
-]
-
-[[package]]
 name = "httptools"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -279,21 +266,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/31/14df99e1c43bd132eec921c2e7e11cda7852f65619bc0fc5bdc2d0cb126c/httptools-0.7.1-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:f084813239e1eb403ddacd06a30de3d3e09a9b76e7894dcda2b22f8a726e9c60", size = 452631, upload-time = "2025-10-10T03:54:58.219Z" },
     { url = "https://files.pythonhosted.org/packages/22/d2/b7e131f7be8d854d48cb6d048113c30f9a46dca0c9a8b08fcb3fcd588cdc/httptools-0.7.1-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:7347714368fb2b335e9063bc2b96f2f87a9ceffcd9758ac295f8bbcd3ffbc0ca", size = 452910, upload-time = "2025-10-10T03:54:59.366Z" },
     { url = "https://files.pythonhosted.org/packages/53/cf/878f3b91e4e6e011eff6d1fa9ca39f7eb17d19c9d7971b04873734112f30/httptools-0.7.1-cp314-cp314-win_amd64.whl", hash = "sha256:cfabda2a5bb85aa2a904ce06d974a3f30fb36cc63d7feaddec05d2050acede96", size = 88205, upload-time = "2025-10-10T03:55:00.389Z" },
-]
-
-[[package]]
-name = "httpxyz"
-version = "0.30.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "certifi" },
-    { name = "httpcore" },
-    { name = "idna" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e5/84/3fd3013275ca39e9b5468d94860e1018da6969678f8aacb8889af7101983/httpxyz-0.30.0.tar.gz", hash = "sha256:e1428daf3d3971a0e3dd66e09badc76549d6b4754aad06a999ba72fbbf4b3ff6", size = 146159, upload-time = "2026-03-31T06:44:43.507Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ce/8f/d2d87f54348075ccf962d8729bc52ed961da0e3332fb28d5316f42095b52/httpxyz-0.30.0-py3-none-any.whl", hash = "sha256:4251f35fc1049acde8b36d46a141241b0ff38f685042f2ee0b32225a4d9a0fae", size = 75937, upload-time = "2026-03-31T06:44:41.661Z" },
 ]
 
 [[package]]
@@ -749,7 +721,6 @@ server = [
 dev = [
     { name = "commitizen" },
     { name = "genbadge", extra = ["coverage"] },
-    { name = "httpxyz" },
     { name = "mypy" },
     { name = "prek" },
     { name = "pytest" },
@@ -776,7 +747,6 @@ provides-extras = ["server"]
 dev = [
     { name = "commitizen", specifier = ">=4.11.0" },
     { name = "genbadge", extras = ["coverage"], specifier = ">=1.1" },
-    { name = "httpxyz", specifier = ">=0.30" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "prek", specifier = ">=0.2.27" },
     { name = "pytest", specifier = ">=8" },
