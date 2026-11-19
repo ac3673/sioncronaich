@@ -74,7 +74,6 @@ app = FastAPI(
     description="Cron job output capture and monitoring",
     version=__version__,
     lifespan=_lifespan,
-    root_path=root_path(),
 )
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
@@ -241,4 +240,10 @@ if __name__ == "__main__":  # pragma: no cover
     parser.add_argument("--port", type=int, default=8716, help="Bind port (default: 8716)")
     args = parser.parse_args()
 
-    uvicorn.run("sioncronaich.app:create_app", host=args.host, port=args.port, factory=True)
+    uvicorn.run(
+        "sioncronaich.app:create_app",
+        host=args.host,
+        port=args.port,
+        factory=True,
+        root_path=root_path(),
+    )
