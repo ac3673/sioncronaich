@@ -39,7 +39,7 @@ async def _cleanup_loop() -> None:
     startup and then once per day at UTC midnight."""
     try:
         deleted = cleanup_old_jobs(db_path=db_path())
-        logger.info(f"Startup cleanup: removed {deleted} job(s) (successful >7d, failed >30d)")
+        logger.info("Startup cleanup: removed %s job(s) (successful >7d, failed >30d)", deleted)
     except Exception:
         logger.exception("Failed to clean up old jobs in db")
     while True:
@@ -48,7 +48,7 @@ async def _cleanup_loop() -> None:
         await asyncio.sleep((next_midnight - now).total_seconds())
         try:
             deleted = cleanup_old_jobs(db_path=db_path())
-            logger.info(f"Midnight cleanup: removed {deleted} job(s) (successful >7d, failed >30d)")
+            logger.info("Midnight cleanup: removed %s job(s) (successful >7d, failed >30d)", deleted)
         except Exception:
             logger.exception("Midnight cleanup encountered an error")
 
@@ -226,7 +226,11 @@ def dashboard(
 
 
 def create_app() -> FastAPI:
-    """App factory — used with ``uvicorn --factory sioncronaich.app:create_app``."""
+    """Return the shared module-level FastAPI instance.
+
+    Not a true factory (the same object is returned on every call); the name
+    satisfies the ``uvicorn --factory`` convention.
+    """
     return app
 
 
