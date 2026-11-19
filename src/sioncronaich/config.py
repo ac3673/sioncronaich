@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 import logging.config
 import os
-from pathlib import Path
-
 import socket
+from pathlib import Path
 
 import yaml
 
@@ -79,6 +78,11 @@ def smtp_ssl() -> bool:
     (``smtplib.SMTP_SSL``).  Mutually exclusive with STARTTLS.
     """
     return os.environ.get("SIONCRONAICH_SMTP_SSL", "").lower() in ("1", "true", "yes")
+
+
+def smtp_timeout() -> float:
+    """SMTP connection timeout in seconds (``SIONCRONAICH_SMTP_TIMEOUT``, default ``10``)."""
+    return float(os.environ.get("SIONCRONAICH_SMTP_TIMEOUT", "10"))
 
 
 def root_path() -> str:

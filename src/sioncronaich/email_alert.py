@@ -21,6 +21,7 @@ from sioncronaich.config import (
     smtp_port,
     smtp_ssl,
     smtp_starttls,
+    smtp_timeout,
     smtp_username,
 )
 from sioncronaich.models import JobResult
@@ -94,17 +95,24 @@ def send_failure_alert(job: JobResult) -> None:
     port = smtp_port()
     use_ssl = smtp_ssl()
     use_starttls = smtp_starttls()
+    timeout = smtp_timeout()
     username = smtp_username()
     password = smtp_password()
 
+    if use_ssl and use_starttls:
+        logger.warning(
+            "Both SIONCRONAICH_SMTP_SSL and SIONCRONAICH_SMTP_STARTTLS are set; "
+            "SSL takes precedence and STARTTLS will be ignored"
+        )
+
     try:
         if use_ssl:
-            with smtplib.SMTP_SSL(host, port) as conn:
+            with smtplib.SMTP_SSL(host, port, timeout=timeout) as conn:
                 if username and password:
                     conn.login(username, password)
                 conn.send_message(msg)
         else:
-            with smtplib.SMTP(host, port) as conn:
+            with smtplib.SMTP(host, port, timeout=timeout) as conn:
                 if use_starttls:
                     conn.starttls()
                 if username and password:

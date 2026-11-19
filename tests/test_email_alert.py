@@ -253,7 +253,7 @@ class TestSendFailureAlert:
         with patch("sioncronaich.email_alert.smtplib.SMTP", return_value=mock_conn) as mock_smtp:
             send_failure_alert(job)
 
-        mock_smtp.assert_called_once_with("smtp.example.com", 587)
+        mock_smtp.assert_called_once_with("smtp.example.com", 587, timeout=10.0)
 
 
 class TestAppIntegration:
