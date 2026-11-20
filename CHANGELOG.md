@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.0 (2026-11-20)
+
+### Feat
+
+- replace requests with httpx2
+- send failure-alert email on job failure
+- add failures-only mode and upgrade to Python 3.14
+
+### Fix
+
+- move root_path to ASGI server level
+- add SMTP timeout and warn on ssl+starttls conflict
+- correct has_stdout/has_stderr off-by-one threshold
+- correct misleading cleanup log messages and stale docstring
+- preserve stdout/stderr link visibility in htmx partial updates
+
+### Refactor
+
+- ruff formatting changes
+- extract shared table HTML into partial and URL-encode pagination
+
 ## [v0.4.0] - 2026-05-19
 
 ### Feat
