@@ -18,7 +18,6 @@ from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
 from sioncronaich.config import configure_logging, db_path, failures_only, root_path
-from sioncronaich.email_alert import send_failure_alert
 from sioncronaich.db import (
     cleanup_old_jobs,
     get_job_by_id,
@@ -26,6 +25,7 @@ from sioncronaich.db import (
     init_db,
     insert_job,
 )
+from sioncronaich.email_alert import send_failure_alert
 from sioncronaich.models import JobResult, JobResultCreate
 
 logger = logging.getLogger(__name__)
@@ -48,13 +48,15 @@ async def _cleanup_loop() -> None:
         await asyncio.sleep((next_midnight - now).total_seconds())
         try:
             deleted = cleanup_old_jobs(db_path=db_path())
-            logger.info("Midnight cleanup: removed %s job(s) (successful >7d, failed >30d)", deleted)
+            logger.info(
+                "Midnight cleanup: removed %s job(s) (successful >7d, failed >30d)", deleted
+            )
         except Exception:
             logger.exception("Midnight cleanup encountered an error")
 
 
 @asynccontextmanager
-async def _lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Configure logging, ensure the database schema exists, and start the
     nightly cleanup background task when the server starts."""
     configure_logging()

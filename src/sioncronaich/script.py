@@ -113,7 +113,9 @@ def _post_result(endpoint: str, payload: JobResultCreate, timeout: int) -> None:
 @click.option(
     "--failures-only",
     is_flag=True,
-    default=lambda: os.environ.get("SIONCRONAICH_FAILURES_ONLY", "").lower() in ("1", "true", "yes"),
+    default=lambda: (
+        os.environ.get("SIONCRONAICH_FAILURES_ONLY", "").lower() in ("1", "true", "yes")
+    ),
     help=(
         "Only report the job if it exits with a non-zero code. "
         "Overrides SIONCRONAICH_FAILURES_ONLY env var."

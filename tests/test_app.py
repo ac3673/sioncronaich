@@ -224,7 +224,10 @@ class TestJobOutputField:
         assert client.get("/jobs/1/output/invalid").status_code == 400
 
     def test_invalid_field_error_detail(self, client: TestClient):
-        assert client.get("/jobs/1/output/invalid").json()["detail"] == "field must be stdout or stderr"
+        assert (
+            client.get("/jobs/1/output/invalid").json()["detail"]
+            == "field must be stdout or stderr"
+        )
 
     def test_missing_job_returns_404(self, client: TestClient):
         assert client.get("/jobs/999/output/stdout").status_code == 404

@@ -57,7 +57,7 @@ def failed_job() -> JobResultCreate:
 
 
 @pytest.fixture
-def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     """TestClient wired to a temporary database.
 
     Using the context-manager form ensures the FastAPI lifespan

@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import smtplib
 import textwrap
-from datetime import datetime
 from email.message import EmailMessage
 
 from sioncronaich.config import (

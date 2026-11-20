@@ -42,7 +42,9 @@ class TestInferName:
         assert _infer_name(("/usr/local/bin/backup.sh",)) == "backup"
 
     def test_infers_stem_from_deep_nested_path(self):
-        assert _infer_name(("python", "/very/deep/nested/nightly_report.py")) == "nightly_report"
+        assert (
+            _infer_name(("python", "/very/deep/nested/nightly_report.py")) == "nightly_report"
+        )
 
     def test_skips_interpreter_token_and_finds_script(self):
         assert _infer_name(("python", "/path/to/run_etl.py")) == "run_etl"
@@ -104,7 +106,9 @@ class TestPostResult:
     def test_posts_to_endpoint(self, sample_payload: JobResultCreate):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        with patch("sioncronaich.script.requests.post", return_value=mock_response) as mock_post:
+        with patch(
+            "sioncronaich.script.requests.post", return_value=mock_response
+        ) as mock_post:
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
             mock_post.assert_called_once()
             assert mock_post.call_args.args[0] == "http://localhost:8716/jobs"
@@ -112,7 +116,9 @@ class TestPostResult:
     def test_sends_json_content_type(self, sample_payload: JobResultCreate):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        with patch("sioncronaich.script.requests.post", return_value=mock_response) as mock_post:
+        with patch(
+            "sioncronaich.script.requests.post", return_value=mock_response
+        ) as mock_post:
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
             assert mock_post.call_args.kwargs["headers"]["Content-Type"] == "application/json"
 
@@ -175,9 +181,14 @@ class TestMain:
             runner.invoke(
                 main,
                 [
-                    "--name", "test",
-                    "--endpoint", "http://override.example.com/jobs",
-                    "--", sys.executable, "-c", "pass",
+                    "--name",
+                    "test",
+                    "--endpoint",
+                    "http://override.example.com/jobs",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "pass",
                 ],
             )
         assert posted_to[0] == "http://override.example.com/jobs"
@@ -262,8 +273,12 @@ class TestMainFailuresOnly:
             runner.invoke(
                 main,
                 [
-                    "--name", "test", "--failures-only",
-                    "--", sys.executable, "nonexistent_file.py",
+                    "--name",
+                    "test",
+                    "--failures-only",
+                    "--",
+                    sys.executable,
+                    "nonexistent_file.py",
                 ],
             )
         assert len(post_calls) == 1
@@ -299,9 +314,7 @@ class TestMainFailuresOnly:
             post_calls.append(True)
 
         with patch("sioncronaich.script._post_result", side_effect=fake_post):
-            runner.invoke(
-                main, ["--name", "test", "--", sys.executable, "nonexistent_file.py"]
-            )
+            runner.invoke(main, ["--name", "test", "--", sys.executable, "nonexistent_file.py"])
         assert len(post_calls) == 1
 
     def test_disabled_by_default(self, runner: CliRunner, monkeypatch: pytest.MonkeyPatch):

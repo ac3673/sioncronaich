@@ -32,7 +32,7 @@ def _default_db_path() -> Path:
 
 
 @contextmanager
-def _connect(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
+def _connect(db_path: Path) -> Generator[sqlite3.Connection]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:

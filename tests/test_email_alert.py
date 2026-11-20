@@ -13,19 +13,19 @@ from sioncronaich.models import JobResult
 
 
 def make_failed_job(**kwargs) -> JobResult:
-    defaults = dict(
-        id=1,
-        job_name="nightly-backup",
-        hostname="cron-host",
-        command="/usr/local/bin/backup.sh",
-        stdout="Backing up files...\n",
-        stderr="error: disk full\n",
-        exit_code=1,
-        started_at=datetime(2024, 6, 1, 2, 0, 0, tzinfo=UTC),
-        finished_at=datetime(2024, 6, 1, 2, 5, 30, tzinfo=UTC),
-        has_stdout=True,
-        has_stderr=True,
-    )
+    defaults = {
+        "id": 1,
+        "job_name": "nightly-backup",
+        "hostname": "cron-host",
+        "command": "/usr/local/bin/backup.sh",
+        "stdout": "Backing up files...\n",
+        "stderr": "error: disk full\n",
+        "exit_code": 1,
+        "started_at": datetime(2024, 6, 1, 2, 0, 0, tzinfo=UTC),
+        "finished_at": datetime(2024, 6, 1, 2, 5, 30, tzinfo=UTC),
+        "has_stdout": True,
+        "has_stderr": True,
+    }
     return JobResult(**{**defaults, **kwargs})
 
 
@@ -112,18 +112,14 @@ class TestBuildMessage:
 
 
 class TestSendFailureAlert:
-    def test_does_nothing_when_alert_email_unset(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_does_nothing_when_alert_email_unset(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("SIONCRONAICH_ALERT_EMAIL", raising=False)
         job = make_failed_job()
         with patch("sioncronaich.email_alert.smtplib.SMTP") as mock_smtp:
             send_failure_alert(job)
         mock_smtp.assert_not_called()
 
-    def test_does_nothing_when_alert_email_empty(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_does_nothing_when_alert_email_empty(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "")
         job = make_failed_job()
         with patch("sioncronaich.email_alert.smtplib.SMTP") as mock_smtp:
@@ -140,7 +136,9 @@ class TestSendFailureAlert:
         mock_conn.__enter__ = lambda s: s
         mock_conn.__exit__ = MagicMock(return_value=False)
 
-        with patch("sioncronaich.email_alert.smtplib.SMTP", return_value=mock_conn) as mock_smtp:
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP", return_value=mock_conn
+        ) as mock_smtp:
             send_failure_alert(job)
 
         mock_smtp.assert_called_once()
@@ -155,7 +153,9 @@ class TestSendFailureAlert:
         mock_conn.__enter__ = lambda s: s
         mock_conn.__exit__ = MagicMock(return_value=False)
 
-        with patch("sioncronaich.email_alert.smtplib.SMTP_SSL", return_value=mock_conn) as mock_ssl:
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP_SSL", return_value=mock_conn
+        ) as mock_ssl:
             send_failure_alert(job)
 
         mock_ssl.assert_called_once()
@@ -250,7 +250,9 @@ class TestSendFailureAlert:
         mock_conn.__enter__ = lambda s: s
         mock_conn.__exit__ = MagicMock(return_value=False)
 
-        with patch("sioncronaich.email_alert.smtplib.SMTP", return_value=mock_conn) as mock_smtp:
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP", return_value=mock_conn
+        ) as mock_smtp:
             send_failure_alert(job)
 
         mock_smtp.assert_called_once_with("smtp.example.com", 587, timeout=10.0)
@@ -259,9 +261,7 @@ class TestSendFailureAlert:
 class TestAppIntegration:
     """Verify that send_failure_alert is called by the POST /jobs endpoint."""
 
-    def test_alert_called_on_failed_job(
-        self, client, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_alert_called_on_failed_job(self, client, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
         payload = {
             "job_name": "broken-job",
@@ -278,9 +278,7 @@ class TestAppIntegration:
         mock_alert.assert_called_once()
         assert mock_alert.call_args[0][0].job_name == "broken-job"
 
-    def test_alert_not_called_on_successful_job(
-        self, client, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_alert_not_called_on_successful_job(self, client, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
         payload = {
             "job_name": "good-job",
