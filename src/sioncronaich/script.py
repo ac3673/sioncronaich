@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import click
-import requests
+import httpx2
 
 from sioncronaich.models import JobResultCreate
 
@@ -67,14 +67,14 @@ def _post_result(endpoint: str, payload: JobResultCreate, timeout: int) -> None:
     code should not be affected by a reporting error.
     """
     try:
-        response = requests.post(
+        response = httpx2.post(
             endpoint,
-            data=payload.model_dump_json(),
+            content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
             timeout=timeout,
         )
         response.raise_for_status()
-    except requests.RequestException as exc:
+    except httpx2.HTTPError as exc:
         click.echo(f"sioncronaich: failed to post result to {endpoint!r}: {exc}", err=True)
 
 

@@ -106,9 +106,7 @@ class TestPostResult:
     def test_posts_to_endpoint(self, sample_payload: JobResultCreate):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        with patch(
-            "sioncronaich.script.requests.post", return_value=mock_response
-        ) as mock_post:
+        with patch("sioncronaich.script.httpx2.post", return_value=mock_response) as mock_post:
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
             mock_post.assert_called_once()
             assert mock_post.call_args.args[0] == "http://localhost:8716/jobs"
@@ -116,29 +114,27 @@ class TestPostResult:
     def test_sends_json_content_type(self, sample_payload: JobResultCreate):
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
-        with patch(
-            "sioncronaich.script.requests.post", return_value=mock_response
-        ) as mock_post:
+        with patch("sioncronaich.script.httpx2.post", return_value=mock_response) as mock_post:
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
             assert mock_post.call_args.kwargs["headers"]["Content-Type"] == "application/json"
 
     def test_does_not_raise_on_connection_error(self, sample_payload: JobResultCreate):
-        import requests as req
+        import httpx2
 
         with patch(
-            "sioncronaich.script.requests.post",
-            side_effect=req.ConnectionError("connection refused"),
+            "sioncronaich.script.httpx2.post",
+            side_effect=httpx2.ConnectError("connection refused"),
         ):
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
 
     def test_prints_error_on_failure(
         self, sample_payload: JobResultCreate, capsys: pytest.CaptureFixture
     ):
-        import requests as req
+        import httpx2
 
         with patch(
-            "sioncronaich.script.requests.post",
-            side_effect=req.ConnectionError("refused"),
+            "sioncronaich.script.httpx2.post",
+            side_effect=httpx2.ConnectError("refused"),
         ):
             _post_result("http://localhost:8716/jobs", sample_payload, timeout=5)
         assert "sioncronaich" in capsys.readouterr().err
