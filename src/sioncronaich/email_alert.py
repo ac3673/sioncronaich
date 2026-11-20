@@ -10,9 +10,11 @@ from __future__ import annotations
 import logging
 import smtplib
 import textwrap
+from datetime import UTC, datetime
 from email.message import EmailMessage
 
 from sioncronaich.config import (
+    alert_cooldown_minutes,
     alert_email,
     smtp_from,
     smtp_host,
@@ -26,6 +28,10 @@ from sioncronaich.config import (
 from sioncronaich.models import JobResult
 
 logger = logging.getLogger(__name__)
+
+# Tracks when the last alert was sent for each job name.  Cleared on restart;
+# that's intentional — a new deploy counts as a new cooldown window.
+_last_sent: dict[str, datetime] = {}
 
 # Maximum number of bytes of stdout/stderr to include in the email body so
 # that a misbehaving job cannot send a multi-megabyte message.
@@ -79,6 +85,8 @@ def send_failure_alert(job: JobResult) -> None:
     """Send a failure-alert email for *job* if ``SIONCRONAICH_ALERT_EMAIL`` is set.
 
     Does nothing (and logs at DEBUG) when the alert address is not configured.
+    Respects the per-job cooldown configured via ``SIONCRONAICH_ALERT_COOLDOWN_MINUTES``
+    to prevent inbox flooding when a job fails repeatedly.
     Logs a warning and swallows the exception if the SMTP call fails so that a
     misconfigured mail server never breaks the ingest endpoint.
     """
@@ -86,6 +94,20 @@ def send_failure_alert(job: JobResult) -> None:
     if not recipient:
         logger.debug("No alert email configured; skipping alert for %r", job.job_name)
         return
+
+    cooldown = alert_cooldown_minutes()
+    if cooldown > 0:
+        last = _last_sent.get(job.job_name)
+        if last is not None:
+            elapsed_minutes = (datetime.now(UTC) - last).total_seconds() / 60
+            if elapsed_minutes < cooldown:
+                logger.info(
+                    "Suppressing alert for %r (last sent %.1f min ago, cooldown %d min)",
+                    job.job_name,
+                    elapsed_minutes,
+                    cooldown,
+                )
+                return
 
     sender = smtp_from()
     msg = _build_message(job, recipient=recipient, sender=sender)
@@ -117,6 +139,7 @@ def send_failure_alert(job: JobResult) -> None:
                 if username and password:
                     conn.login(username, password)
                 conn.send_message(msg)
+        _last_sent[job.job_name] = datetime.now(UTC)
         logger.info(
             "Sent failure alert for %r (exit %s) to %s",
             job.job_name,

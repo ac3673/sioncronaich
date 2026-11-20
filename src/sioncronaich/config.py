@@ -37,6 +37,16 @@ def alert_email() -> str | None:
     return os.environ.get("SIONCRONAICH_ALERT_EMAIL") or None
 
 
+def alert_cooldown_minutes() -> int:
+    """Per-job alert cooldown in minutes (``SIONCRONAICH_ALERT_COOLDOWN_MINUTES``, default ``60``).
+
+    After an alert is sent for a job, further alerts for the same job name are
+    suppressed until this many minutes have elapsed.  Set to ``0`` to disable
+    cooldown and send an email on every failure.
+    """
+    return int(os.environ.get("SIONCRONAICH_ALERT_COOLDOWN_MINUTES", "60"))
+
+
 def smtp_host() -> str:
     """SMTP server hostname (``SIONCRONAICH_SMTP_HOST``, default ``localhost``)."""
     return os.environ.get("SIONCRONAICH_SMTP_HOST", "localhost")

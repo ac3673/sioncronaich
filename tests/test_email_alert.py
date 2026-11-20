@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import smtplib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import sioncronaich.email_alert as email_alert_module
 from sioncronaich.email_alert import _build_message, _truncate, send_failure_alert
 from sioncronaich.models import JobResult
 
@@ -256,6 +257,99 @@ class TestSendFailureAlert:
             send_failure_alert(job)
 
         mock_smtp.assert_called_once_with("smtp.example.com", 587, timeout=10.0)
+
+
+class TestAlertCooldown:
+    """Per-job cooldown suppresses repeated emails for the same job."""
+
+    def _mock_conn(self):
+        conn = MagicMock()
+        conn.__enter__ = lambda s: s
+        conn.__exit__ = MagicMock(return_value=False)
+        return conn
+
+    def test_first_failure_always_sends(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        job = make_failed_job()
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP", return_value=self._mock_conn()
+        ) as m:
+            send_failure_alert(job)
+        m.assert_called_once()
+
+    def test_second_failure_within_cooldown_suppressed(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.setenv("SIONCRONAICH_ALERT_COOLDOWN_MINUTES", "60")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        job = make_failed_job()
+        # Seed cooldown as if an alert was just sent
+        email_alert_module._last_sent[job.job_name] = datetime.now(UTC)
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP", return_value=self._mock_conn()
+        ) as m:
+            send_failure_alert(job)
+        m.assert_not_called()
+
+    def test_failure_after_cooldown_expires_sends(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.setenv("SIONCRONAICH_ALERT_COOLDOWN_MINUTES", "60")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        job = make_failed_job()
+        # Seed cooldown as if an alert was sent 61 minutes ago
+        email_alert_module._last_sent[job.job_name] = datetime.now(UTC) - timedelta(minutes=61)
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP", return_value=self._mock_conn()
+        ) as m:
+            send_failure_alert(job)
+        m.assert_called_once()
+
+    def test_cooldown_zero_disables_suppression(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.setenv("SIONCRONAICH_ALERT_COOLDOWN_MINUTES", "0")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        job = make_failed_job()
+        email_alert_module._last_sent[job.job_name] = datetime.now(UTC)
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP", return_value=self._mock_conn()
+        ) as m:
+            send_failure_alert(job)
+        m.assert_called_once()
+
+    def test_different_jobs_do_not_share_cooldown(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.setenv("SIONCRONAICH_ALERT_COOLDOWN_MINUTES", "60")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        job_a = make_failed_job(job_name="job-a")
+        job_b = make_failed_job(job_name="job-b")
+        # Only job-a is in cooldown
+        email_alert_module._last_sent["job-a"] = datetime.now(UTC)
+        conn = self._mock_conn()
+        with patch("sioncronaich.email_alert.smtplib.SMTP", return_value=conn) as m:
+            send_failure_alert(job_a)  # suppressed
+            send_failure_alert(job_b)  # should send
+        m.assert_called_once()
+
+    def test_last_sent_updated_after_successful_send(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        job = make_failed_job()
+        before = datetime.now(UTC)
+        with patch("sioncronaich.email_alert.smtplib.SMTP", return_value=self._mock_conn()):
+            send_failure_alert(job)
+        assert job.job_name in email_alert_module._last_sent
+        assert email_alert_module._last_sent[job.job_name] >= before
+
+    def test_last_sent_not_updated_on_smtp_failure(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        job = make_failed_job()
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP",
+            side_effect=smtplib.SMTPException("refused"),
+        ):
+            send_failure_alert(job)
+        assert job.job_name not in email_alert_module._last_sent
 
 
 class TestAppIntegration:

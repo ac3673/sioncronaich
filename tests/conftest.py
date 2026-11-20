@@ -9,9 +9,18 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import sioncronaich.email_alert as email_alert_module
 from sioncronaich.app import create_app
 from sioncronaich.db import init_db
 from sioncronaich.models import JobResultCreate
+
+
+@pytest.fixture(autouse=True)
+def clear_alert_cooldown_state():
+    """Reset per-job alert cooldown between tests to prevent cross-test pollution."""
+    email_alert_module._last_sent.clear()
+    yield
+    email_alert_module._last_sent.clear()
 
 
 @pytest.fixture
