@@ -11,13 +11,14 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from sioncronaich import __version__
-from sioncronaich.config import configure_logging, db_path, failures_only, root_path
+from sioncronaich.config import Settings, configure_logging, load_settings
 from sioncronaich.db import (
     cleanup_old_jobs,
     get_job_by_id,
@@ -34,11 +35,14 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-async def _cleanup_loop() -> None:
-    """Background task: run :func:`~sioncronaich.db.cleanup_old_jobs` once at
-    startup and then once per day at UTC midnight."""
+def _get_settings(request: Request) -> Settings:
+    return request.app.state.settings
+
+
+async def _cleanup_loop(settings: Settings) -> None:
+    """Run :func:`cleanup_old_jobs` once at startup and then nightly at UTC midnight."""
     try:
-        deleted = cleanup_old_jobs(db_path=db_path())
+        deleted = cleanup_old_jobs(db_path=settings.db)
         logger.info("Startup cleanup: removed %s job(s) (successful >7d, failed >30d)", deleted)
     except Exception:
         logger.exception("Failed to clean up old jobs in db")
@@ -47,22 +51,21 @@ async def _cleanup_loop() -> None:
         next_midnight = datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=UTC)
         await asyncio.sleep((next_midnight - now).total_seconds())
         try:
-            deleted = cleanup_old_jobs(db_path=db_path())
+            deleted = cleanup_old_jobs(db_path=settings.db)
             logger.info(
-                "Midnight cleanup: removed %s job(s) (successful >7d, failed >30d)", deleted
+                "Midnight cleanup: removed %s job(s) (successful >7d, failed >30d)",
+                deleted,
             )
         except Exception:
             logger.exception("Midnight cleanup encountered an error")
 
 
 @asynccontextmanager
-async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    """Configure logging, ensure the database schema exists, and start the
-    nightly cleanup background task when the server starts."""
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     configure_logging()
-    resolved = init_db(db_path())
+    resolved = init_db(app.state.settings.db)
     logger.info("Database ready at %s", resolved)
-    cleanup_task = asyncio.create_task(_cleanup_loop())
+    cleanup_task = asyncio.create_task(_cleanup_loop(app.state.settings))
     try:
         yield
     finally:
@@ -71,168 +74,151 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             await cleanup_task
 
 
-app = FastAPI(
-    title="sioncronaich",
-    description="Cron job output capture and monitoring",
-    version=__version__,
-    lifespan=_lifespan,
-)
-
-templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
-app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
-
-
-# ---------------------------------------------------------------------------
-# API routes
-# ---------------------------------------------------------------------------
-
-
-@app.post("/jobs", response_model=JobResult, status_code=201)
-def create_job(job: JobResultCreate) -> Response:
-    """Receive and persist a single job result from the sioncronaich script.
-
-    When ``SIONCRONAICH_FAILURES_ONLY`` is set, successful jobs are acknowledged
-    with 204 No Content and not stored.
-    """
-    logger.info("Received job result: %s (exit_code=%s)", job.job_name, job.exit_code)
-    if failures_only() and job.exit_code == 0:
-        logger.debug("Discarding successful job %r (failures_only mode)", job.job_name)
-        return Response(status_code=204)
-    result = insert_job(job, db_path=db_path())
-    if result.exit_code != 0:
-        send_failure_alert(result)
-    return JSONResponse(result.model_dump(mode="json"), status_code=201)
-
-
-@app.get("/jobs", response_model=list[JobResult])
-def list_jobs(
-    limit: int = 200,
-    offset: int = 0,
-    job_name: str | None = None,
-    hostname: str | None = None,
-    status: str | None = None,
-    command: str | None = None,
-) -> list[JobResult]:
-    """Return job results as JSON (newest first)."""
-    return get_jobs(
-        limit=limit,
-        offset=offset,
-        job_name=job_name,
-        hostname=hostname,
-        status=status,
-        command=command,
-        db_path=db_path(),
-    )
-
-
-@app.get("/jobs/{job_id}/output")
-def job_output(job_id: int) -> JSONResponse:
-    """Return stdout and stderr for a single job — fetched lazily by the dashboard."""
-    job = get_job_by_id(job_id, db_path=db_path())
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return JSONResponse({"stdout": job.stdout, "stderr": job.stderr})
-
-
-@app.get("/jobs/{job_id}/output/{field}", response_class=HTMLResponse)
-def job_output_field(job_id: int, field: str) -> HTMLResponse:
-    """Return a single output field as an HTML-escaped fragment for htmx."""
-    if field not in ("stdout", "stderr"):
-        raise HTTPException(status_code=400, detail="field must be stdout or stderr")
-    job = get_job_by_id(job_id, db_path=db_path())
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return HTMLResponse(html.escape(getattr(job, field) or "(empty)"))
-
-
-# ---------------------------------------------------------------------------
-# HTML dashboard
-# ---------------------------------------------------------------------------
-
-
-@app.get("/table", response_class=HTMLResponse)
-def table_partial(
-    request: Request,
-    limit: int = 200,
-    offset: int = 0,
-    job_name: str | None = None,
-    hostname: str | None = None,
-    status: str | None = None,
-    command: str | None = None,
-) -> Response:
-    """Return just the table+pagination fragment for htmx partial updates."""
-    jobs = get_jobs(
-        limit=limit,
-        offset=offset,
-        job_name=job_name,
-        hostname=hostname,
-        status=status,
-        command=command,
-        exclude_output=True,
-        db_path=db_path(),
-    )
-    return templates.TemplateResponse(
-        request,
-        "table_partial.html",
-        {
-            "jobs": jobs,
-            "limit": limit,
-            "offset": offset,
-            "job_name": job_name or "",
-            "hostname": hostname or "",
-            "status": status or "",
-            "command": command or "",
-        },
-    )
-
-
-@app.get("/", response_class=HTMLResponse)
-def dashboard(
-    request: Request,
-    limit: int = 200,
-    offset: int = 0,
-    job_name: str | None = None,
-    hostname: str | None = None,
-    status: str | None = None,
-    command: str | None = None,
-) -> Response:
-    """Render an HTML table of recent job results."""
-    jobs = get_jobs(
-        limit=limit,
-        offset=offset,
-        job_name=job_name,
-        hostname=hostname,
-        status=status,
-        command=command,
-        exclude_output=False,
-        db_path=db_path(),
-    )
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "jobs": jobs,
-            "limit": limit,
-            "offset": offset,
-            "job_name": job_name or "",
-            "hostname": hostname or "",
-            "status": status or "",
-            "command": command or "",
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-
 def create_app() -> FastAPI:
-    """Return the shared module-level FastAPI instance.
+    load_dotenv()
+    settings = load_settings()
 
-    Not a true factory (the same object is returned on every call); the name
-    satisfies the ``uvicorn --factory`` convention.
-    """
+    app = FastAPI(
+        title="sioncronaich",
+        description="Cron job output capture and monitoring",
+        version=__version__,
+        lifespan=_lifespan,
+    )
+    app.state.settings = settings
+
+    templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    # ---------------------------------------------------------------------
+    # API routes
+    # ---------------------------------------------------------------------
+
+    @app.post("/jobs", response_model=JobResult, status_code=201)
+    def create_job(job: JobResultCreate, request: Request) -> Response:
+        """Persist a job result; when ``failures_only`` is set, drop successes with 204."""
+        s = _get_settings(request)
+        logger.info("Received job result: %s (exit_code=%s)", job.job_name, job.exit_code)
+        if s.failures_only and job.exit_code == 0:
+            logger.debug("Discarding successful job %r (failures_only mode)", job.job_name)
+            return Response(status_code=204)
+        result = insert_job(job, db_path=s.db)
+        if result.exit_code != 0:
+            send_failure_alert(result, s)
+        return JSONResponse(result.model_dump(mode="json"), status_code=201)
+
+    @app.get("/jobs", response_model=list[JobResult])
+    def list_jobs(
+        request: Request,
+        limit: int = 200,
+        offset: int = 0,
+        job_name: str | None = None,
+        hostname: str | None = None,
+        status: str | None = None,
+        command: str | None = None,
+    ) -> list[JobResult]:
+        """Return job results as JSON (newest first)."""
+        return get_jobs(
+            limit=limit,
+            offset=offset,
+            job_name=job_name,
+            hostname=hostname,
+            status=status,
+            command=command,
+            db_path=_get_settings(request).db,
+        )
+
+    @app.get("/jobs/{job_id}/output")
+    def job_output(job_id: int, request: Request) -> JSONResponse:
+        """Return stdout and stderr for a single job — fetched lazily by the dashboard."""
+        job = get_job_by_id(job_id, db_path=_get_settings(request).db)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return JSONResponse({"stdout": job.stdout, "stderr": job.stderr})
+
+    @app.get("/jobs/{job_id}/output/{field}", response_class=HTMLResponse)
+    def job_output_field(job_id: int, field: str, request: Request) -> HTMLResponse:
+        """Return a single output field as an HTML-escaped fragment for htmx."""
+        if field not in ("stdout", "stderr"):
+            raise HTTPException(status_code=400, detail="field must be stdout or stderr")
+        job = get_job_by_id(job_id, db_path=_get_settings(request).db)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return HTMLResponse(html.escape(getattr(job, field) or "(empty)"))
+
+    # ---------------------------------------------------------------------
+    # HTML dashboard
+    # ---------------------------------------------------------------------
+
+    @app.get("/table", response_class=HTMLResponse)
+    def table_partial(
+        request: Request,
+        limit: int = 200,
+        offset: int = 0,
+        job_name: str | None = None,
+        hostname: str | None = None,
+        status: str | None = None,
+        command: str | None = None,
+    ) -> Response:
+        """Return just the table+pagination fragment for htmx partial updates."""
+        jobs = get_jobs(
+            limit=limit,
+            offset=offset,
+            job_name=job_name,
+            hostname=hostname,
+            status=status,
+            command=command,
+            exclude_output=True,
+            db_path=_get_settings(request).db,
+        )
+        return templates.TemplateResponse(
+            request,
+            "table_partial.html",
+            {
+                "jobs": jobs,
+                "limit": limit,
+                "offset": offset,
+                "job_name": job_name or "",
+                "hostname": hostname or "",
+                "status": status or "",
+                "command": command or "",
+            },
+        )
+
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard(
+        request: Request,
+        limit: int = 200,
+        offset: int = 0,
+        job_name: str | None = None,
+        hostname: str | None = None,
+        status: str | None = None,
+        command: str | None = None,
+    ) -> Response:
+        """Render an HTML table of recent job results."""
+        jobs = get_jobs(
+            limit=limit,
+            offset=offset,
+            job_name=job_name,
+            hostname=hostname,
+            status=status,
+            command=command,
+            exclude_output=False,
+            db_path=_get_settings(request).db,
+        )
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            {
+                "jobs": jobs,
+                "limit": limit,
+                "offset": offset,
+                "job_name": job_name or "",
+                "hostname": hostname or "",
+                "status": status or "",
+                "command": command or "",
+            },
+        )
+
     return app
 
 
@@ -246,10 +232,12 @@ if __name__ == "__main__":  # pragma: no cover
     parser.add_argument("--port", type=int, default=8716, help="Bind port (default: 8716)")
     args = parser.parse_args()
 
+    load_dotenv()
+    settings = load_settings()
     uvicorn.run(
         "sioncronaich.app:create_app",
         host=args.host,
         port=args.port,
         factory=True,
-        root_path=root_path(),
+        root_path=settings.root_path,
     )

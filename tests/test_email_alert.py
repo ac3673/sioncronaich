@@ -9,8 +9,20 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import sioncronaich.email_alert as email_alert_module
-from sioncronaich.email_alert import _build_message, _truncate, send_failure_alert
+from sioncronaich.config import load_settings
+from sioncronaich.email_alert import (
+    _build_message,
+    _truncate,
+)
+from sioncronaich.email_alert import (
+    send_failure_alert as _send_failure_alert,
+)
 from sioncronaich.models import JobResult
+
+
+def send_failure_alert(job: JobResult) -> None:
+    """Shim so env-driven tests keep working: build Settings from env each call."""
+    _send_failure_alert(job, load_settings())
 
 
 def make_failed_job(**kwargs) -> JobResult:

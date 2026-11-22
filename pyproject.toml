@@ -23,6 +23,8 @@ server = [
     "uvicorn[standard]>=0.29,<1",
     "jinja2>=3.1,<4",
     "pyyaml>=6.0,<7",
+    "python-dotenv>=1.0,<2",
+    "pydantic-settings>=2.3,<3",
 ]
 
 [dependency-groups]

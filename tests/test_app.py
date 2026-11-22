@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sioncronaich.app import _cleanup_loop
+from sioncronaich.config import Settings
 from sioncronaich.db import cleanup_old_jobs, get_jobs
 
 JOB_PAYLOAD = {
@@ -63,31 +64,23 @@ class TestPostJob:
 
 
 class TestPostJobFailuresOnly:
-    """POST /jobs behaviour when SIONCRONAICH_FAILURES_ONLY is set."""
+    """POST /jobs behaviour when ``failures_only`` is enabled."""
 
-    def test_successful_job_returns_204(
-        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+    def test_successful_job_returns_204(self, client: TestClient):
+        client.app.state.settings.failures_only = True
         assert client.post("/jobs", json=JOB_PAYLOAD).status_code == 204
 
-    def test_successful_job_not_persisted(
-        self, client: TestClient, db_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+    def test_successful_job_not_persisted(self, client: TestClient, db_path: Path):
+        client.app.state.settings.failures_only = True
         client.post("/jobs", json=JOB_PAYLOAD)
         assert get_jobs(db_path=db_path) == []
 
-    def test_failed_job_still_returns_201(
-        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+    def test_failed_job_still_returns_201(self, client: TestClient):
+        client.app.state.settings.failures_only = True
         assert client.post("/jobs", json=FAILED_PAYLOAD).status_code == 201
 
-    def test_failed_job_still_persisted(
-        self, client: TestClient, db_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.setenv("SIONCRONAICH_FAILURES_ONLY", "1")
+    def test_failed_job_still_persisted(self, client: TestClient, db_path: Path):
+        client.app.state.settings.failures_only = True
         client.post("/jobs", json=FAILED_PAYLOAD)
         assert len(get_jobs(db_path=db_path)) == 1
 
@@ -333,7 +326,7 @@ class TestCleanupLoop:
     async def test_startup_cleanup_exception_is_swallowed(
         self, db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
+        settings = Settings(db=db_path)
 
         def boom(*_args: object, **_kwargs: object) -> int:
             raise RuntimeError("db exploded")
@@ -346,12 +339,12 @@ class TestCleanupLoop:
         monkeypatch.setattr("sioncronaich.app.asyncio.sleep", instant_cancel)
 
         with pytest.raises(asyncio.CancelledError):
-            await _cleanup_loop()
+            await _cleanup_loop(settings)
 
     async def test_loop_body_runs_cleanup_after_sleep(
         self, db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
+        settings = Settings(db=db_path)
 
         sleep_calls = 0
 
@@ -374,14 +367,14 @@ class TestCleanupLoop:
         monkeypatch.setattr("sioncronaich.app.cleanup_old_jobs", tracking_cleanup)
 
         with pytest.raises(asyncio.CancelledError):
-            await _cleanup_loop()
+            await _cleanup_loop(settings)
 
         assert len(call_log) == 2
 
     async def test_loop_body_exception_is_swallowed(
         self, db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
+        settings = Settings(db=db_path)
 
         sleep_calls = 0
 
@@ -405,4 +398,4 @@ class TestCleanupLoop:
         monkeypatch.setattr("sioncronaich.app.cleanup_old_jobs", boom_on_second)
 
         with pytest.raises(asyncio.CancelledError):
-            await _cleanup_loop()
+            await _cleanup_loop(settings)

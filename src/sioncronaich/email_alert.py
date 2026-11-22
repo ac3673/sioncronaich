@@ -1,9 +1,4 @@
-"""Send failure-alert emails via SMTP when a job exits with a non-zero code.
-
-All SMTP settings are read from environment variables (see :mod:`config`).
-This module is intentionally free of FastAPI/app dependencies so it can be
-imported by both the server (``app.py``) and tested in isolation.
-"""
+"""Send failure-alert emails via SMTP when a job exits with a non-zero code."""
 
 from __future__ import annotations
 
@@ -13,18 +8,7 @@ import textwrap
 from datetime import UTC, datetime
 from email.message import EmailMessage
 
-from sioncronaich.config import (
-    alert_cooldown_minutes,
-    alert_email,
-    smtp_from,
-    smtp_host,
-    smtp_password,
-    smtp_port,
-    smtp_ssl,
-    smtp_starttls,
-    smtp_timeout,
-    smtp_username,
-)
+from sioncronaich.config import Settings
 from sioncronaich.models import JobResult
 
 logger = logging.getLogger(__name__)
@@ -81,21 +65,18 @@ def _build_message(job: JobResult, recipient: str, sender: str) -> EmailMessage:
     return msg
 
 
-def send_failure_alert(job: JobResult) -> None:
-    """Send a failure-alert email for *job* if ``SIONCRONAICH_ALERT_EMAIL`` is set.
+def send_failure_alert(job: JobResult, settings: Settings) -> None:
+    """Email a failure alert for *job*, honouring ``alert_cooldown_minutes``.
 
-    Does nothing (and logs at DEBUG) when the alert address is not configured.
-    Respects the per-job cooldown configured via ``SIONCRONAICH_ALERT_COOLDOWN_MINUTES``
-    to prevent inbox flooding when a job fails repeatedly.
-    Logs a warning and swallows the exception if the SMTP call fails so that a
-    misconfigured mail server never breaks the ingest endpoint.
+    No-op when ``alert_email`` is unset. SMTP errors are logged and swallowed
+    so a misconfigured mail server never breaks the ingest endpoint.
     """
-    recipient = alert_email()
+    recipient = settings.alert_email
     if not recipient:
         logger.debug("No alert email configured; skipping alert for %r", job.job_name)
         return
 
-    cooldown = alert_cooldown_minutes()
+    cooldown = settings.alert_cooldown_minutes
     if cooldown > 0:
         last = _last_sent.get(job.job_name)
         if last is not None:
@@ -109,20 +90,19 @@ def send_failure_alert(job: JobResult) -> None:
                 )
                 return
 
-    sender = smtp_from()
-    msg = _build_message(job, recipient=recipient, sender=sender)
+    msg = _build_message(job, recipient=recipient, sender=settings.smtp_from)
 
-    host = smtp_host()
-    port = smtp_port()
-    use_ssl = smtp_ssl()
-    use_starttls = smtp_starttls()
-    timeout = smtp_timeout()
-    username = smtp_username()
-    password = smtp_password()
+    host = settings.smtp_host
+    port = settings.smtp_port
+    use_ssl = settings.smtp_ssl
+    use_starttls = settings.smtp_starttls
+    timeout = settings.smtp_timeout
+    username = settings.smtp_username
+    password = settings.smtp_password
 
     if use_ssl and use_starttls:
         logger.warning(
-            "Both SIONCRONAICH_SMTP_SSL and SIONCRONAICH_SMTP_STARTTLS are set; "
+            "Both smtp_ssl and smtp_starttls are set; "
             "SSL takes precedence and STARTTLS will be ignored"
         )
 

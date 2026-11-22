@@ -67,12 +67,8 @@ def failed_job() -> JobResultCreate:
 
 @pytest.fixture
 def client(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
-    """TestClient wired to a temporary database.
-
-    Using the context-manager form ensures the FastAPI lifespan
-    (configure_logging + init_db) is exercised on every test that
-    uses this fixture.
-    """
+    """TestClient wired to a temporary DB, with lifespan events exercised."""
+    monkeypatch.delenv("SIONCRONAICH_CONFIG_FILE", raising=False)
     monkeypatch.setenv("SIONCRONAICH_DB", str(db_path))
     with TestClient(create_app()) as test_client:
         yield test_client

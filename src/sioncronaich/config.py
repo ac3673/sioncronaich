@@ -1,4 +1,4 @@
-"""Environment-based configuration for the sioncronaich server and script."""
+"""Configuration for the sioncronaich server."""
 
 from __future__ import annotations
 
@@ -7,110 +7,74 @@ import logging.config
 import os
 import socket
 from pathlib import Path
+from typing import Any
 
 import yaml
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def db_path() -> Path | None:
-    """Return the database path from ``SIONCRONAICH_DB``, or ``None`` for the default."""
-    raw = os.environ.get("SIONCRONAICH_DB")
-    return Path(raw) if raw else None
+def _default_domain() -> str:
+    fqdn = socket.getfqdn()
+    _, _, domain = fqdn.partition(".")
+    return domain or fqdn
 
 
-def failures_only() -> bool:
-    """Return ``True`` when ``SIONCRONAICH_FAILURES_ONLY`` is set to a truthy
-    value (``1``, ``true``, or ``yes``, case-insensitive).
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="SIONCRONAICH_",
+        env_ignore_empty=True,
+        extra="ignore",
+    )
 
-    When enabled, the server discards successful job results without persisting
-    them.  Useful when jobs run very frequently and only failures are worth
-    keeping.
-    """
-    return os.environ.get("SIONCRONAICH_FAILURES_ONLY", "").lower() in ("1", "true", "yes")
+    db: Path | None = None
 
+    failures_only: bool = False
+    root_path: str = "/sioncronaich"
 
-def alert_email() -> str | None:
-    """Return the failure-alert recipient from ``SIONCRONAICH_ALERT_EMAIL``.
+    alert_email: str | None = None
+    alert_cooldown_minutes: int = 60
 
-    Returns ``None`` when the variable is unset or empty, which disables email
-    alerts entirely.
-    """
-    return os.environ.get("SIONCRONAICH_ALERT_EMAIL") or None
-
-
-def alert_cooldown_minutes() -> int:
-    """Per-job alert cooldown in minutes (``SIONCRONAICH_ALERT_COOLDOWN_MINUTES``, default ``60``).
-
-    After an alert is sent for a job, further alerts for the same job name are
-    suppressed until this many minutes have elapsed.  Set to ``0`` to disable
-    cooldown and send an email on every failure.
-    """
-    return int(os.environ.get("SIONCRONAICH_ALERT_COOLDOWN_MINUTES", "60"))
+    smtp_host: str = "localhost"
+    smtp_port: int = 25
+    smtp_from: str = Field(default_factory=lambda: f"sioncronaich@{_default_domain()}")
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_starttls: bool = False
+    smtp_ssl: bool = False
+    smtp_timeout: float = 10.0
 
 
-def smtp_host() -> str:
-    """SMTP server hostname (``SIONCRONAICH_SMTP_HOST``, default ``localhost``)."""
-    return os.environ.get("SIONCRONAICH_SMTP_HOST", "localhost")
+def _load_yaml(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"YAML config at {path} must be a mapping at the top level, "
+            f"got {type(data).__name__}"
+        )
+    return data
 
 
-def smtp_port() -> int:
-    """SMTP server port (``SIONCRONAICH_SMTP_PORT``, default ``25``)."""
-    return int(os.environ.get("SIONCRONAICH_SMTP_PORT", "25"))
+def load_settings() -> Settings:
+    """Build a Settings instance, optionally seeded from the YAML file at
+    ``SIONCRONAICH_CONFIG_FILE``; env vars fill the rest."""
+    yaml_data: dict[str, Any] = {}
 
+    yaml_path = os.environ.get("SIONCRONAICH_CONFIG_FILE")
+    if yaml_path:
+        path = Path(yaml_path)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"SIONCRONAICH_CONFIG_FILE points to a non-existent file: {path}"
+            )
+        yaml_data = _load_yaml(path)
 
-def smtp_from() -> str:
-    """Sender address (``SIONCRONAICH_SMTP_FROM``).
-
-    Defaults to ``sioncronaich@<hostname>``.
-    """
-    default = f"sioncronaich@{socket.gethostname()}"
-    return os.environ.get("SIONCRONAICH_SMTP_FROM") or default
-
-
-def smtp_username() -> str | None:
-    """SMTP login username (``SIONCRONAICH_SMTP_USERNAME``), or ``None``."""
-    return os.environ.get("SIONCRONAICH_SMTP_USERNAME") or None
-
-
-def smtp_password() -> str | None:
-    """SMTP login password (``SIONCRONAICH_SMTP_PASSWORD``), or ``None``."""
-    return os.environ.get("SIONCRONAICH_SMTP_PASSWORD") or None
-
-
-def smtp_starttls() -> bool:
-    """Return ``True`` when ``SIONCRONAICH_SMTP_STARTTLS`` is a truthy value."""
-    return os.environ.get("SIONCRONAICH_SMTP_STARTTLS", "").lower() in ("1", "true", "yes")
-
-
-def smtp_ssl() -> bool:
-    """Return ``True`` when ``SIONCRONAICH_SMTP_SSL`` is a truthy value.
-
-    When enabled, the connection is wrapped in TLS from the start
-    (``smtplib.SMTP_SSL``).  Mutually exclusive with STARTTLS.
-    """
-    return os.environ.get("SIONCRONAICH_SMTP_SSL", "").lower() in ("1", "true", "yes")
-
-
-def smtp_timeout() -> float:
-    """SMTP connection timeout in seconds (``SIONCRONAICH_SMTP_TIMEOUT``, default ``10``)."""
-    return float(os.environ.get("SIONCRONAICH_SMTP_TIMEOUT", "10"))
-
-
-def root_path() -> str:
-    """Return the ASGI root path from ``SIONCRONAICH_ROOT_PATH``.
-
-    Set this to the prefix your reverse proxy strips before forwarding,
-    e.g. ``SIONCRONAICH_ROOT_PATH=/sioncronaich`` when Caddy is configured
-    with ``handle_path /sioncronaich/*``.  Defaults to ``/sioncronaich``.
-    """
-    return os.environ.get("SIONCRONAICH_ROOT_PATH", "/sioncronaich")
+    return Settings(**yaml_data)
 
 
 def configure_logging() -> None:
-    """Load logging configuration from the file named in ``LOG_CONFIG``.
-
-    Falls back to a sensible default if the variable is unset or the file
-    does not exist.
-    """
+    """Configure logging from ``LOG_CONFIG`` (a YAML dictConfig), or a sane default."""
     log_config_path = os.environ.get("LOG_CONFIG")
 
     if log_config_path:
@@ -121,7 +85,6 @@ def configure_logging() -> None:
             config = yaml.safe_load(fh)
         logging.config.dictConfig(config)
     else:
-        # Minimal default: INFO to stderr
         logging.basicConfig(
             format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",

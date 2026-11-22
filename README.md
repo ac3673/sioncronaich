@@ -28,22 +28,56 @@ uv run uvicorn --factory sioncronaich.app:create_app --host 127.0.0.1 --port 871
 Pass `--host`, `--port`, and any other server options directly to uvicorn.
 See `uvicorn --help` for the full list.
 
-The app reads the following environment variables:
+Settings can be supplied via environment variables, a YAML file, or a `.env`
+file. Resolution order (highest priority first):
 
-| Environment variable | Default | Purpose |
-|---|---|---|
-| `SIONCRONAICH_DB` | `~/.local/share/sioncronaich/jobs.db` | SQLite database path |
-| `SIONCRONAICH_ROOT_PATH` | `/sioncronaich` | ASGI root path when mounted behind a reverse proxy |
-| `SIONCRONAICH_FAILURES_ONLY` | *(unset)* | Set to `1`, `true`, or `yes` to discard successful job results without storing them |
-| `SIONCRONAICH_ALERT_EMAIL` | *(unset — alerts disabled)* | Send a failure-alert email to this address whenever a job exits non-zero |
-| `SIONCRONAICH_SMTP_HOST` | `localhost` | SMTP server hostname |
-| `SIONCRONAICH_SMTP_PORT` | `25` | SMTP server port |
-| `SIONCRONAICH_SMTP_FROM` | `sioncronaich@<hostname>` | Sender address |
-| `SIONCRONAICH_SMTP_USERNAME` | *(unset)* | SMTP login username |
-| `SIONCRONAICH_SMTP_PASSWORD` | *(unset)* | SMTP login password |
-| `SIONCRONAICH_SMTP_STARTTLS` | *(unset)* | Set to `1`, `true`, or `yes` to issue STARTTLS after connecting |
-| `SIONCRONAICH_SMTP_SSL` | *(unset)* | Set to `1`, `true`, or `yes` to connect with SMTP_SSL (implicit TLS) |
-| `LOG_CONFIG` | *(unset — logs to stderr at INFO)* | Path to a YAML logging config file |
+1. `SIONCRONAICH_*` environment variables
+2. YAML file at `$SIONCRONAICH_CONFIG`, or `./sioncronaich.yaml` if present
+3. `.env` file at `$SIONCRONAICH_ENV_FILE`, or `./.env` if present
+4. Built-in defaults
+
+All `SIONCRONAICH_*` variables below have a matching lower-case YAML key
+(e.g. `SIONCRONAICH_SMTP_HOST` → `smtp_host`).
+
+| Environment variable | YAML key | Default | Purpose |
+|---|---|---|---|
+| `SIONCRONAICH_CONFIG` | — | *(unset)* | Path to a YAML config file. If unset, `./sioncronaich.yaml` is auto-discovered |
+| `SIONCRONAICH_ENV_FILE` | — | *(unset)* | Path to a `.env` file. If unset, `./.env` is auto-discovered |
+| `SIONCRONAICH_DB` | `db` | `~/.local/share/sioncronaich/jobs.db` | SQLite database path |
+| `SIONCRONAICH_ROOT_PATH` | `root_path` | `/sioncronaich` | ASGI root path when mounted behind a reverse proxy |
+| `SIONCRONAICH_FAILURES_ONLY` | `failures_only` | `false` | Set to `1`, `true`, or `yes` to discard successful job results without storing them |
+| `SIONCRONAICH_ALERT_EMAIL` | `alert_email` | *(unset — alerts disabled)* | Send a failure-alert email to this address whenever a job exits non-zero |
+| `SIONCRONAICH_ALERT_COOLDOWN_MINUTES` | `alert_cooldown_minutes` | `60` | Per-job cooldown between failure-alert emails (minutes). `0` disables cooldown |
+| `SIONCRONAICH_SMTP_HOST` | `smtp_host` | `localhost` | SMTP server hostname |
+| `SIONCRONAICH_SMTP_PORT` | `smtp_port` | `25` | SMTP server port |
+| `SIONCRONAICH_SMTP_FROM` | `smtp_from` | `sioncronaich@<hostname>` | Sender address |
+| `SIONCRONAICH_SMTP_USERNAME` | `smtp_username` | *(unset)* | SMTP login username |
+| `SIONCRONAICH_SMTP_PASSWORD` | `smtp_password` | *(unset)* | SMTP login password |
+| `SIONCRONAICH_SMTP_STARTTLS` | `smtp_starttls` | `false` | Set to `1`, `true`, or `yes` to issue STARTTLS after connecting |
+| `SIONCRONAICH_SMTP_SSL` | `smtp_ssl` | `false` | Set to `1`, `true`, or `yes` to connect with SMTP_SSL (implicit TLS) |
+| `SIONCRONAICH_SMTP_TIMEOUT` | `smtp_timeout` | `10` | SMTP connection timeout, seconds |
+| `LOG_CONFIG` | — | *(unset — logs to stderr at INFO)* | Path to a YAML logging config file |
+
+Empty env var values (e.g. `SIONCRONAICH_DB=`) are treated as unset and fall
+through to the next source.
+
+Example `sioncronaich.yaml`:
+
+```yaml
+db: /var/lib/sioncronaich/jobs.db
+failures_only: false
+root_path: /sioncronaich
+
+alert_email: ops@example.com
+alert_cooldown_minutes: 60
+
+smtp_host: mail.example.com
+smtp_port: 587
+smtp_from: sioncronaich@example.com
+smtp_username: sioncronaich
+smtp_password: secret
+smtp_starttls: true
+```
 
 ### 2 — Wrap a command
 
