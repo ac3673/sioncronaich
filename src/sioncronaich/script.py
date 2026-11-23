@@ -113,20 +113,26 @@ def _post_result(endpoint: str, payload: JobResultCreate, timeout: int) -> None:
 @click.option(
     "--failures-only",
     is_flag=True,
-    default=lambda: (
-        os.environ.get("SIONCRONAICH_FAILURES_ONLY", "").lower() in ("1", "true", "yes")
+    default=False,
+    hidden=True,
+    expose_value=False,
+    is_eager=True,
+    callback=lambda ctx, _param, value: (
+        ctx.fail(
+            "--failures-only was removed in v0.7.0. "
+            "Set SIONCRONAICH_FAILURES_ONLY=true (or failures_only: true in your config) "
+            "on the server instead."
+        )
+        if value
+        else None
     ),
-    help=(
-        "Only report the job if it exits with a non-zero code. "
-        "Overrides SIONCRONAICH_FAILURES_ONLY env var."
-    ),
+    help="Removed. Use the server-side failures_only setting instead.",
 )
 @click.argument("command", nargs=-1, type=click.UNPROCESSED, required=True)
 def main(
     name: str | None,
     endpoint: str,
     timeout: int,
-    failures_only: bool,
     command: tuple[str, ...],
 ) -> None:
     if name is None:
@@ -137,9 +143,6 @@ def main(
         )
 
     stdout, stderr, exit_code, started_at, finished_at = _run_command(command)
-
-    if failures_only and exit_code == 0:
-        sys.exit(0)
 
     payload = JobResultCreate(
         job_name=name,

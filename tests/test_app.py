@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from sioncronaich.app import _cleanup_loop
+from sioncronaich.app import _cleanup_loop, _missing_jobs_loop
 from sioncronaich.config import Settings
-from sioncronaich.db import cleanup_old_jobs, get_jobs
+from sioncronaich.db import cleanup_old_jobs, get_all_job_names, get_jobs
 
 JOB_PAYLOAD = {
     "job_name": "test-job",
@@ -74,6 +74,11 @@ class TestPostJobFailuresOnly:
         client.app.state.settings.failures_only = True
         client.post("/jobs", json=JOB_PAYLOAD)
         assert get_jobs(db_path=db_path) == []
+
+    def test_successful_job_still_recorded_in_job_runs(self, client: TestClient, db_path: Path):
+        client.app.state.settings.failures_only = True
+        client.post("/jobs", json=JOB_PAYLOAD)
+        assert JOB_PAYLOAD["job_name"] in get_all_job_names(db_path=db_path)
 
     def test_failed_job_still_returns_201(self, client: TestClient):
         client.app.state.settings.failures_only = True
@@ -399,3 +404,151 @@ class TestCleanupLoop:
 
         with pytest.raises(asyncio.CancelledError):
             await _cleanup_loop(settings)
+
+
+class TestMissingJobsLoop:
+    async def test_loop_cancels_cleanly(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        settings = Settings(db=db_path)
+
+        # The loop starts with a 1h startup sleep; cancelling on that is enough.
+        async def instant_cancel(_seconds: float) -> None:
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr("sioncronaich.app.asyncio.sleep", instant_cancel)
+        with pytest.raises(asyncio.CancelledError):
+            await _missing_jobs_loop(settings)
+
+    async def test_skips_jobs_below_min_runs(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime
+
+        from sioncronaich.db import record_run
+        from sioncronaich.models import JobResultCreate
+
+        settings = Settings(db=db_path, missing_job_min_runs=3)
+
+        call_count = 0
+
+        async def sleep_then_cancel(_seconds: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:  # cancel on the end-of-loop sleep, not the startup delay
+                raise asyncio.CancelledError
+
+        monkeypatch.setattr("sioncronaich.app.asyncio.sleep", sleep_then_cancel)
+
+        job = JobResultCreate(
+            job_name="sparse-job",
+            hostname="h",
+            command="x",
+            stdout="",
+            stderr="",
+            exit_code=0,
+            started_at=datetime(2024, 1, 1, tzinfo=UTC),
+            finished_at=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+        record_run(job, db_path=db_path)
+        record_run(job, db_path=db_path)
+
+        alerted: list = []
+        monkeypatch.setattr(
+            "sioncronaich.app.send_missing_job_alert", lambda *a: alerted.append(a)
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await _missing_jobs_loop(settings)
+
+        assert alerted == []
+
+    async def test_exclusion_list_skips_job(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime
+
+        from sioncronaich.db import record_run
+        from sioncronaich.models import JobResultCreate
+
+        settings = Settings(db=db_path, missing_job_min_runs=2, missing_job_exclude=["skip-me"])
+
+        call_count = 0
+
+        async def sleep_then_cancel(_seconds: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                raise asyncio.CancelledError
+
+        monkeypatch.setattr("sioncronaich.app.asyncio.sleep", sleep_then_cancel)
+
+        job = JobResultCreate(
+            job_name="skip-me",
+            hostname="h",
+            command="x",
+            stdout="",
+            stderr="",
+            exit_code=0,
+            started_at=datetime(2024, 1, 1, tzinfo=UTC),
+            finished_at=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+        for _ in range(3):
+            record_run(job, db_path=db_path)
+
+        alerted: list = []
+        monkeypatch.setattr(
+            "sioncronaich.app.send_missing_job_alert", lambda *a: alerted.append(a)
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await _missing_jobs_loop(settings)
+
+        assert alerted == []
+
+    async def test_alerts_when_job_overdue(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from sioncronaich.db import record_run
+        from sioncronaich.models import JobResultCreate
+
+        settings = Settings(db=db_path, missing_job_min_runs=2, missing_job_multiplier=1.5)
+
+        call_count = 0
+
+        async def sleep_then_cancel(_seconds: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                raise asyncio.CancelledError
+
+        monkeypatch.setattr("sioncronaich.app.asyncio.sleep", sleep_then_cancel)
+
+        # 3 runs 24h apart; most recent is now-50h -> overdue at 1.5x24h=36h threshold
+        base = datetime.now(UTC) - timedelta(hours=98)
+        for i in range(3):
+            ts = base + timedelta(hours=24 * i)
+            job = JobResultCreate(
+                job_name="daily-job",
+                hostname="h",
+                command="x",
+                stdout="",
+                stderr="",
+                exit_code=0,
+                started_at=ts,
+                finished_at=ts,
+            )
+            record_run(job, db_path=db_path)
+
+        alerted: list = []
+        monkeypatch.setattr(
+            "sioncronaich.app.send_missing_job_alert", lambda *a: alerted.append(a)
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await _missing_jobs_loop(settings)
+
+        assert len(alerted) == 1
+        assert alerted[0][0] == "daily-job"

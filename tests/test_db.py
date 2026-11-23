@@ -223,3 +223,86 @@ class TestGetJobs:
         insert_job(sample_job, db_path=db_path)
         results = get_jobs(db_path=db_path)
         assert results[0].has_stderr is False
+
+
+class TestRecordRun:
+    def test_records_job_name(self, db_path: Path, sample_job: JobResultCreate):
+        from sioncronaich.db import get_all_job_names, record_run
+
+        record_run(sample_job, db_path=db_path)
+        assert sample_job.job_name in get_all_job_names(db_path=db_path)
+
+    def test_multiple_runs_same_job(self, db_path: Path, sample_job: JobResultCreate):
+        from sioncronaich.db import get_run_history, record_run
+
+        record_run(sample_job, db_path=db_path)
+        record_run(sample_job, db_path=db_path)
+        assert len(get_run_history(sample_job.job_name, db_path=db_path)) == 2
+
+
+class TestGetRunHistory:
+    def test_returns_newest_first(self, db_path: Path):
+        from datetime import UTC, datetime
+
+        from sioncronaich.db import get_run_history, record_run
+        from sioncronaich.models import JobResultCreate
+
+        early = datetime(2024, 1, 1, tzinfo=UTC)
+        late = datetime(2024, 1, 2, tzinfo=UTC)
+        for ts in (early, late):
+            job = JobResultCreate(
+                job_name="j",
+                hostname="h",
+                command="x",
+                stdout="",
+                stderr="",
+                exit_code=0,
+                started_at=ts,
+                finished_at=ts,
+            )
+            record_run(job, db_path=db_path)
+
+        history = get_run_history("j", db_path=db_path)
+        assert history[0] == late
+        assert history[1] == early
+
+    def test_respects_limit(self, db_path: Path, sample_job: JobResultCreate):
+        from sioncronaich.db import get_run_history, record_run
+
+        for _ in range(5):
+            record_run(sample_job, db_path=db_path)
+        assert len(get_run_history(sample_job.job_name, limit=3, db_path=db_path)) == 3
+
+    def test_returns_empty_for_unknown_job(self, db_path: Path):
+        from sioncronaich.db import get_run_history
+
+        assert get_run_history("no-such-job", db_path=db_path) == []
+
+
+class TestGetAllJobNames:
+    def test_returns_distinct_names(self, db_path: Path):
+        from datetime import UTC, datetime
+
+        from sioncronaich.db import get_all_job_names, record_run
+        from sioncronaich.models import JobResultCreate
+
+        for name in ("job-a", "job-b", "job-a"):
+            job = JobResultCreate(
+                job_name=name,
+                hostname="h",
+                command="x",
+                stdout="",
+                stderr="",
+                exit_code=0,
+                started_at=datetime(2024, 1, 1, tzinfo=UTC),
+                finished_at=datetime(2024, 1, 1, tzinfo=UTC),
+            )
+            record_run(job, db_path=db_path)
+
+        names = get_all_job_names(db_path=db_path)
+        assert sorted(names) == ["job-a", "job-b"]
+
+    def test_empty_db_returns_empty(self, db_path: Path):
+        from sioncronaich.db import get_all_job_names
+
+        assert get_all_job_names(db_path=db_path) == []

@@ -10,19 +10,30 @@ from pathlib import Path
 
 from sioncronaich.models import JobResult, JobResultCreate
 
-_CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS job_results (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_name     TEXT    NOT NULL,
-    hostname     TEXT    NOT NULL,
-    command      TEXT    NOT NULL,
-    stdout       TEXT    NOT NULL,
-    stderr       TEXT    NOT NULL,
-    exit_code    INTEGER NOT NULL,
-    started_at   TEXT    NOT NULL,
-    finished_at  TEXT    NOT NULL
-);
-"""
+_CREATE_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS job_results (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_name     TEXT    NOT NULL,
+        hostname     TEXT    NOT NULL,
+        command      TEXT    NOT NULL,
+        stdout       TEXT    NOT NULL,
+        stderr       TEXT    NOT NULL,
+        exit_code    INTEGER NOT NULL,
+        started_at   TEXT    NOT NULL,
+        finished_at  TEXT    NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS job_runs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_name    TEXT NOT NULL,
+        finished_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_job_runs_name ON job_runs (job_name)",
+    "CREATE INDEX IF NOT EXISTS idx_job_runs_finished_at ON job_runs (finished_at)",
+]
 
 
 def _default_db_path() -> Path:
@@ -52,7 +63,8 @@ def init_db(db_path: Path | None = None) -> Path:
     """
     resolved = db_path or _default_db_path()
     with _connect(resolved) as conn:
-        conn.execute(_CREATE_TABLE)
+        for stmt in _CREATE_STATEMENTS:
+            conn.execute(stmt)
     return resolved
 
 
@@ -128,21 +140,54 @@ def get_job_by_id(job_id: int, *, db_path: Path | None = None) -> JobResult | No
     )
 
 
-def cleanup_old_jobs(db_path: Path | None = None) -> int:
-    """Delete old job results
-
-    Returns the number of rows deleted.
-    """
+def record_run(job: JobResultCreate, db_path: Path | None = None) -> None:
     resolved = db_path or _default_db_path()
-    failed_jobs_cutoff = datetime.now(UTC) - timedelta(days=30)
-    successful_jobs_cutoff = datetime.now(UTC) - timedelta(days=7)
+    # Normalise to UTC before storing so that ORDER BY finished_at is a correct
+    # chronological sort regardless of the client's local timezone offset.
+    finished_utc = job.finished_at.astimezone(UTC).isoformat()
+    with _connect(resolved) as conn:
+        conn.execute(
+            "INSERT INTO job_runs (job_name, finished_at) VALUES (:job_name, :finished_at)",
+            {"job_name": job.job_name, "finished_at": finished_utc},
+        )
+
+
+def get_run_history(
+    job_name: str, limit: int = 10, db_path: Path | None = None
+) -> list[datetime]:
+    resolved = db_path or _default_db_path()
+    with _connect(resolved) as conn:
+        rows = conn.execute(
+            "SELECT finished_at FROM job_runs WHERE job_name = :name ORDER BY finished_at DESC LIMIT :limit",
+            {"name": job_name, "limit": limit},
+        ).fetchall()
+    return [_parse_dt(row["finished_at"]) for row in rows]
+
+
+def get_all_job_names(db_path: Path | None = None) -> list[str]:
+    resolved = db_path or _default_db_path()
+    with _connect(resolved) as conn:
+        rows = conn.execute("SELECT DISTINCT job_name FROM job_runs").fetchall()
+    return [row["job_name"] for row in rows]
+
+
+def cleanup_old_jobs(db_path: Path | None = None) -> int:
+    resolved = db_path or _default_db_path()
+    now = datetime.now(UTC)
+    failed_cutoff = now - timedelta(days=30)
+    success_cutoff = now - timedelta(days=7)
+    runs_cutoff = now - timedelta(days=60)
     with _connect(resolved) as conn:
         cursor = conn.execute(
-            "DELETE FROM job_results WHERE (exit_code = 0 AND finished_at < :successful_jobs_cutoff) OR (exit_code != 0 and finished_at < :failed_jobs_cutoff)",
+            "DELETE FROM job_results WHERE (exit_code = 0 AND finished_at < :success_cutoff) OR (exit_code != 0 AND finished_at < :failed_cutoff)",
             {
-                "successful_jobs_cutoff": successful_jobs_cutoff.isoformat(),
-                "failed_jobs_cutoff": failed_jobs_cutoff.isoformat(),
+                "success_cutoff": success_cutoff.isoformat(),
+                "failed_cutoff": failed_cutoff.isoformat(),
             },
+        )
+        conn.execute(
+            "DELETE FROM job_runs WHERE finished_at < :cutoff",
+            {"cutoff": runs_cutoff.isoformat()},
         )
     return cursor.rowcount
 

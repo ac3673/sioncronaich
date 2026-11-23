@@ -188,3 +188,29 @@ class TestConfigureLogging:
         monkeypatch.setenv("LOG_CONFIG", str(tmp_path / "nonexistent.yaml"))
         with pytest.raises(FileNotFoundError, match="LOG_CONFIG"):
             configure_logging()
+
+
+class TestMissingJobConfig:
+    def test_missing_job_alerts_default(self) -> None:
+        assert load_settings().missing_job_alerts is True
+
+    def test_missing_job_alerts_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SIONCRONAICH_MISSING_JOB_ALERTS", "false")
+        assert load_settings().missing_job_alerts is False
+
+    def test_missing_job_multiplier_default(self) -> None:
+        assert load_settings().missing_job_multiplier == 1.5
+
+    def test_missing_job_min_runs_default(self) -> None:
+        assert load_settings().missing_job_min_runs == 3
+
+    def test_missing_job_exclude_default(self) -> None:
+        assert load_settings().missing_job_exclude == []
+
+    def test_missing_job_multiplier_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SIONCRONAICH_MISSING_JOB_MULTIPLIER", "2.0")
+        assert load_settings().missing_job_multiplier == 2.0
+
+    def test_missing_job_min_runs_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SIONCRONAICH_MISSING_JOB_MIN_RUNS", "5")
+        assert load_settings().missing_job_min_runs == 5

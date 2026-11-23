@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     alert_email: str | None = None
     alert_cooldown_minutes: int = 60
 
+    missing_job_alerts: bool = True
+    missing_job_multiplier: float = 1.5
+    missing_job_min_runs: int = Field(default=3, ge=2)  # ≥2 required to compute an interval
+    missing_job_exclude: list[str] = []
+
     smtp_host: str = "localhost"
     smtp_port: int = 25
     smtp_from: str = Field(default_factory=lambda: f"sioncronaich@{_default_domain()}")

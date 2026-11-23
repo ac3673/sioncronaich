@@ -234,7 +234,7 @@ class TestSendFailureAlert:
         ):
             send_failure_alert(job)  # must not raise
 
-        assert any("Failed to send failure alert" in r.message for r in caplog.records)
+        assert any("Failed to send email" in r.message for r in caplog.records)
 
     def test_logs_in_via_ssl_when_credentials_provided(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
@@ -399,3 +399,68 @@ class TestAppIntegration:
         with patch("sioncronaich.app.send_failure_alert") as mock_alert:
             client.post("/jobs", json=payload)
         mock_alert.assert_not_called()
+
+
+class TestSendMissingJobAlert:
+    def _mock_conn(self):
+        conn = MagicMock()
+        conn.__enter__ = lambda s: s
+        conn.__exit__ = MagicMock(return_value=False)
+        return conn
+
+    def test_no_op_when_alert_email_unset(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("SIONCRONAICH_ALERT_EMAIL", raising=False)
+        from sioncronaich.email_alert import send_missing_job_alert
+
+        with patch("sioncronaich.email_alert.smtplib.SMTP") as m:
+            send_missing_job_alert("my-job", None, load_settings())
+        m.assert_not_called()
+
+    def test_sends_when_last_seen_is_none(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        from sioncronaich.email_alert import send_missing_job_alert
+
+        with patch(
+            "sioncronaich.email_alert.smtplib.SMTP", return_value=self._mock_conn()
+        ) as m:
+            send_missing_job_alert("my-job", None, load_settings())
+        m.assert_called_once()
+
+    def test_body_says_never_when_last_seen_none(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        from sioncronaich.email_alert import send_missing_job_alert
+
+        sent_msgs = []
+        conn = self._mock_conn()
+        conn.send_message = lambda m: sent_msgs.append(m)
+        with patch("sioncronaich.email_alert.smtplib.SMTP", return_value=conn):
+            send_missing_job_alert("my-job", None, load_settings())
+        assert "never" in sent_msgs[0].get_content()
+
+    def test_subject_contains_job_name(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        from sioncronaich.email_alert import send_missing_job_alert
+
+        sent_msgs = []
+        conn = self._mock_conn()
+        conn.send_message = lambda m: sent_msgs.append(m)
+        with patch("sioncronaich.email_alert.smtplib.SMTP", return_value=conn):
+            send_missing_job_alert("my-job", None, load_settings())
+        assert "my-job" in sent_msgs[0]["Subject"]
+        assert "MISSING" in sent_msgs[0]["Subject"]
+
+    def test_cooldown_suppresses_repeat(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("SIONCRONAICH_ALERT_EMAIL", "ops@example.com")
+        monkeypatch.setenv("SIONCRONAICH_ALERT_COOLDOWN_MINUTES", "60")
+        monkeypatch.delenv("SIONCRONAICH_SMTP_SSL", raising=False)
+        import sioncronaich.email_alert as m
+
+        m._last_missing_sent["my-job"] = datetime.now(UTC)
+        from sioncronaich.email_alert import send_missing_job_alert
+
+        with patch("sioncronaich.email_alert.smtplib.SMTP") as smtp:
+            send_missing_job_alert("my-job", None, load_settings())
+        smtp.assert_not_called()

@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
+from statistics import median
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -21,12 +22,15 @@ from sioncronaich import __version__
 from sioncronaich.config import Settings, configure_logging, load_settings
 from sioncronaich.db import (
     cleanup_old_jobs,
+    get_all_job_names,
     get_job_by_id,
     get_jobs,
+    get_run_history,
     init_db,
     insert_job,
+    record_run,
 )
-from sioncronaich.email_alert import send_failure_alert
+from sioncronaich.email_alert import send_failure_alert, send_missing_job_alert
 from sioncronaich.models import JobResult, JobResultCreate
 
 logger = logging.getLogger(__name__)
@@ -60,18 +64,69 @@ async def _cleanup_loop(settings: Settings) -> None:
             logger.exception("Midnight cleanup encountered an error")
 
 
+async def _missing_jobs_loop(settings: Settings) -> None:
+    # Sleep first so an operator deploying a new instance isn't immediately
+    # flooded with alerts for jobs that happen to be overdue at startup.
+    await asyncio.sleep(3600)
+    exclude = set(settings.missing_job_exclude)
+    while True:
+        now = datetime.now(UTC)
+        try:
+            job_names = get_all_job_names(db_path=settings.db)
+        except Exception:
+            logger.exception("_missing_jobs_loop: failed to fetch job names")
+            await asyncio.sleep(3600)
+            continue
+        for job_name in job_names:
+            if job_name in exclude:
+                continue
+            try:
+                history = get_run_history(
+                    job_name, limit=settings.missing_job_min_runs + 5, db_path=settings.db
+                )
+                if len(history) < settings.missing_job_min_runs:
+                    continue
+                intervals = [
+                    (history[i] - history[i + 1]).total_seconds()
+                    for i in range(len(history) - 1)
+                    if (history[i] - history[i + 1]).total_seconds() > 0
+                ]
+                if not intervals:
+                    logger.debug(
+                        "_missing_jobs_loop: no positive intervals for %r; skipping",
+                        job_name,
+                    )
+                    continue
+                threshold = timedelta(
+                    seconds=median(intervals) * settings.missing_job_multiplier
+                )
+                if now - history[0] > threshold:
+                    send_missing_job_alert(job_name, history[0], settings)
+            except Exception:
+                logger.exception("_missing_jobs_loop: error while checking job %r", job_name)
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     configure_logging()
     resolved = init_db(app.state.settings.db)
     logger.info("Database ready at %s", resolved)
     cleanup_task = asyncio.create_task(_cleanup_loop(app.state.settings))
+    missing_task = (
+        asyncio.create_task(_missing_jobs_loop(app.state.settings))
+        if app.state.settings.missing_job_alerts
+        else None
+    )
     try:
         yield
     finally:
-        cleanup_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await cleanup_task
+        for task in (cleanup_task, missing_task):
+            if task is None:
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 def create_app() -> FastAPI:
@@ -98,6 +153,7 @@ def create_app() -> FastAPI:
         """Persist a job result; when ``failures_only`` is set, drop successes with 204."""
         s = _get_settings(request)
         logger.info("Received job result: %s (exit_code=%s)", job.job_name, job.exit_code)
+        record_run(job, db_path=s.db)
         if s.failures_only and job.exit_code == 0:
             logger.debug("Discarding successful job %r (failures_only mode)", job.job_name)
             return Response(status_code=204)

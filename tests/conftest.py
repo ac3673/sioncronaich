@@ -19,8 +19,10 @@ from sioncronaich.models import JobResultCreate
 def clear_alert_cooldown_state():
     """Reset per-job alert cooldown between tests to prevent cross-test pollution."""
     email_alert_module._last_sent.clear()
+    email_alert_module._last_missing_sent.clear()
     yield
     email_alert_module._last_sent.clear()
+    email_alert_module._last_missing_sent.clear()
 
 
 @pytest.fixture

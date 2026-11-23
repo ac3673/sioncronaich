@@ -13,12 +13,9 @@ from sioncronaich.models import JobResult
 
 logger = logging.getLogger(__name__)
 
-# Tracks when the last alert was sent for each job name.  Cleared on restart;
-# that's intentional — a new deploy counts as a new cooldown window.
 _last_sent: dict[str, datetime] = {}
+_last_missing_sent: dict[str, datetime] = {}
 
-# Maximum number of bytes of stdout/stderr to include in the email body so
-# that a misbehaving job cannot send a multi-megabyte message.
 _MAX_OUTPUT_BYTES = 8_192
 
 
@@ -65,33 +62,7 @@ def _build_message(job: JobResult, recipient: str, sender: str) -> EmailMessage:
     return msg
 
 
-def send_failure_alert(job: JobResult, settings: Settings) -> None:
-    """Email a failure alert for *job*, honouring ``alert_cooldown_minutes``.
-
-    No-op when ``alert_email`` is unset. SMTP errors are logged and swallowed
-    so a misconfigured mail server never breaks the ingest endpoint.
-    """
-    recipient = settings.alert_email
-    if not recipient:
-        logger.debug("No alert email configured; skipping alert for %r", job.job_name)
-        return
-
-    cooldown = settings.alert_cooldown_minutes
-    if cooldown > 0:
-        last = _last_sent.get(job.job_name)
-        if last is not None:
-            elapsed_minutes = (datetime.now(UTC) - last).total_seconds() / 60
-            if elapsed_minutes < cooldown:
-                logger.info(
-                    "Suppressing alert for %r (last sent %.1f min ago, cooldown %d min)",
-                    job.job_name,
-                    elapsed_minutes,
-                    cooldown,
-                )
-                return
-
-    msg = _build_message(job, recipient=recipient, sender=settings.smtp_from)
-
+def _send_smtp(msg: EmailMessage, settings: Settings) -> bool:
     host = settings.smtp_host
     port = settings.smtp_port
     use_ssl = settings.smtp_ssl
@@ -119,6 +90,43 @@ def send_failure_alert(job: JobResult, settings: Settings) -> None:
                 if username and password:
                     conn.login(username, password)
                 conn.send_message(msg)
+        return True
+    except Exception:
+        logger.warning("Failed to send email to %s", settings.alert_email, exc_info=True)
+        return False
+
+
+def _within_cooldown(cache: dict[str, datetime], key: str, cooldown: int) -> bool:
+    if cooldown <= 0:
+        return False
+    last = cache.get(key)
+    return last is not None and (datetime.now(UTC) - last).total_seconds() / 60 < cooldown
+
+
+def send_failure_alert(job: JobResult, settings: Settings) -> None:
+    """Email a failure alert for *job*, honouring ``alert_cooldown_minutes``.
+
+    No-op when ``alert_email`` is unset. SMTP errors are logged and swallowed
+    so a misconfigured mail server never breaks the ingest endpoint.
+    """
+    recipient = settings.alert_email
+    if not recipient:
+        logger.debug("No alert email configured; skipping alert for %r", job.job_name)
+        return
+
+    if _within_cooldown(_last_sent, job.job_name, settings.alert_cooldown_minutes):
+        last = _last_sent[job.job_name]
+        elapsed = (datetime.now(UTC) - last).total_seconds() / 60
+        logger.info(
+            "Suppressing alert for %r (last sent %.1f min ago, cooldown %d min)",
+            job.job_name,
+            elapsed,
+            settings.alert_cooldown_minutes,
+        )
+        return
+
+    msg = _build_message(job, recipient=recipient, sender=settings.smtp_from)
+    if _send_smtp(msg, settings):
         _last_sent[job.job_name] = datetime.now(UTC)
         logger.info(
             "Sent failure alert for %r (exit %s) to %s",
@@ -126,10 +134,38 @@ def send_failure_alert(job: JobResult, settings: Settings) -> None:
             job.exit_code,
             recipient,
         )
-    except Exception:
-        logger.warning(
-            "Failed to send failure alert for %r to %s",
-            job.job_name,
-            recipient,
-            exc_info=True,
-        )
+
+
+def send_missing_job_alert(
+    job_name: str, last_seen: datetime | None, settings: Settings
+) -> None:
+    recipient = settings.alert_email
+    if not recipient:
+        return
+
+    if _within_cooldown(_last_missing_sent, job_name, settings.alert_cooldown_minutes):
+        logger.info("Suppressing missing-job alert for %r (within cooldown)", job_name)
+        return
+
+    if last_seen is None:
+        last_seen_str = "never"
+        since_str = "n/a"
+    else:
+        last_seen_str = last_seen.strftime("%Y-%m-%d %H:%M:%S %Z")
+        since_str = f"{(datetime.now(UTC) - last_seen).total_seconds() / 3600:.1f}h ago"
+
+    msg = EmailMessage()
+    msg["Subject"] = f"[sioncronaich] MISSING: {job_name}"
+    msg["From"] = settings.smtp_from
+    msg["To"] = recipient
+    msg.set_content(
+        textwrap.dedent(f"""\
+        Job:       {job_name}
+        Last seen: {last_seen_str}
+        Since:     {since_str}
+    """)
+    )
+
+    if _send_smtp(msg, settings):
+        _last_missing_sent[job_name] = datetime.now(UTC)
+        logger.info("Sent missing-job alert for %r to %s", job_name, recipient)
